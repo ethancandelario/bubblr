@@ -3600,9 +3600,22 @@
         schedule();
       }
 
-      async function pdfBytesToSvg(bytes) {
+      function exportFmt(n) {
+        const r = Math.round(Number(n || 0) * 1000) / 1000;
+        return Object.is(r, -0) ? '0' : String(r);
+      }
+
+      function escapeXmlAttr(value) {
+        return String(value == null ? '' : value)
+          .replace(/&/g, '&amp;')
+          .replace(/"/g, '&quot;')
+          .replace(/</g, '&lt;')
+          .replace(/>/g, '&gt;');
+      }
+
+      async function pdfBytesToVectorSvg(bytes) {
         if (!window.pdfjsLib || !pdfjsLib.SVGGraphics) {
-          throw new Error('SVG export requires the PDF.js SVG renderer, which is unavailable in this browser build.');
+          throw new Error('PDF.js SVGGraphics is unavailable.');
         }
 
         const doc = await pdfjsLib.getDocument({ data: bytes.slice() }).promise;
@@ -3617,10 +3630,56 @@
 
           const svg = await svgGfx.getSVG(opList, viewport);
           svg.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
+          svg.setAttribute('width', exportFmt(viewport.width));
+          svg.setAttribute('height', exportFmt(viewport.height));
+          svg.setAttribute('viewBox', `0 0 ${exportFmt(viewport.width)} ${exportFmt(viewport.height)}`);
 
           return new XMLSerializer().serializeToString(svg);
         } finally {
           doc.destroy();
+        }
+      }
+
+      async function pdfBytesToRasterSvg(bytes) {
+        if (!window.pdfjsLib) {
+          throw new Error('SVG export requires PDF.js, which is unavailable in this browser build.');
+        }
+
+        const doc = await pdfjsLib.getDocument({ data: bytes.slice() }).promise;
+
+        try {
+          const page = await doc.getPage(1);
+          const viewport = page.getViewport({ scale: 2 });
+          const canvas = document.createElement('canvas');
+          const ctx = canvas.getContext('2d', { alpha: false });
+
+          canvas.width = Math.ceil(viewport.width);
+          canvas.height = Math.ceil(viewport.height);
+          ctx.fillStyle = '#fff';
+          ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+          await page.render({ canvasContext: ctx, viewport }).promise;
+
+          const width = viewport.width / 2;
+          const height = viewport.height / 2;
+          const href = canvas.toDataURL('image/png');
+
+          return [
+            `<svg xmlns="http://www.w3.org/2000/svg" width="${exportFmt(width)}" height="${exportFmt(height)}" viewBox="0 0 ${exportFmt(width)} ${exportFmt(height)}">`,
+            `<image href="${escapeXmlAttr(href)}" width="${exportFmt(width)}" height="${exportFmt(height)}" preserveAspectRatio="none"/>`,
+            '</svg>'
+          ].join('');
+        } finally {
+          doc.destroy();
+        }
+      }
+
+      async function pdfBytesToSvg(bytes) {
+        try {
+          return await pdfBytesToVectorSvg(bytes);
+        } catch (err) {
+          console.warn('[bubblr] Vector SVG export unavailable; falling back to raster SVG.', err);
+          return pdfBytesToRasterSvg(bytes);
         }
       }
 
@@ -3665,31 +3724,54 @@
 
       window.addEventListener('resize', requestPreviewOverlaySync);
 
+      async function blobForExportFormat(bytes, format) {
+        switch (format) {
+          case 'pdf':
+            return new Blob([bytes], { type: 'application/pdf' });
+          case 'ai':
+            return new Blob([bytes], { type: 'application/vnd.adobe.illustrator' });
+          case 'svg':
+            return new Blob([await pdfBytesToSvg(bytes)], { type: 'image/svg+xml;charset=utf-8' });
+          case 'png':
+            return pdfBytesToRasterBlob(bytes, 'image/png');
+          case 'jpg':
+            return pdfBytesToRasterBlob(bytes, 'image/jpeg');
+          default:
+            throw new Error(`Unsupported export format: ${format}`);
+        }
+      }
+
+      function downloadBlob(blob, filename) {
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = filename;
+        a.style.display = 'none';
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        setTimeout(() => URL.revokeObjectURL(a.href), 30000);
+      }
+
+      function outputBaseName() {
+        const sourceName = workbookName || aiName || 'heat-map';
+        return String(sourceName)
+          .replace(/\.[^.\/]+$/i, '')
+          .replace(/[\/:*?"<>|]+/g, '-')
+          .trim() || 'heat-map';
+      }
+
       $('btnDl').addEventListener('click', async () => {
         if (!lastBytes) return;
 
-        const format = $('optFormat').value || 'pdf';
-        const base = (aiName || 'heat-map.ai').replace(/\.(ai|pdf)$/i, '');
-        const a = document.createElement('a');
-        let blob;
+        const format = ($('optFormat').value || 'pdf').toLowerCase();
+        const filename = `${outputBaseName()}.${format}`;
 
         try {
-          if (format === 'svg') {
-            blob = new Blob([await pdfBytesToSvg(lastBytes)], { type: 'image/svg+xml' });
-          } else if (format === 'png' || format === 'jpg') {
-            blob = await pdfBytesToRasterBlob(lastBytes, format === 'jpg' ? 'image/jpeg' : 'image/png');
-          } else {
-            blob = new Blob([lastBytes], { type: 'application/pdf' });
-          }
-
-          a.href = URL.createObjectURL(blob);
-          a.download = `${base}_updated.${format}`;
-          a.click();
-
-          setTimeout(() => URL.revokeObjectURL(a.href), 30000);
-          log(`Downloaded "${a.download}".`);
+          downloadBlob(await blobForExportFormat(lastBytes, format), filename);
+          log(`Downloaded "${filename}".`);
         } catch (err) {
           console.error(`[bubblr] Could not export ${format.toUpperCase()}:`, err);
+          alert(`Could not export ${format.toUpperCase()}. Check the browser console for details.`);
         }
       });
 
