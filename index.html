@@ -436,7 +436,8 @@
       font: 13px system-ui;
       padding: 3px 5px;
       box-shadow: 0 2px 10px rgba(43, 34, 40, .18);
-      pointer-events: auto
+      pointer-events: auto;
+      user-select: text
     }
 
     #pv.busy::after {
@@ -494,10 +495,10 @@
             <input type="number" id="optTopN" value="10" min="0" step="1">
           </div>
           <div class="opt" title="Value mapped to the left/bottom edge of the plot"><label for="optMin">Axis min</label>
-            <input type="number" id="optMin" value="0" step="0.5">
+            <input type="number" id="optMin" step="0.5" placeholder="0 auto">
           </div>
           <div class="opt" title="Value mapped to the right/top edge of the plot"><label for="optMax">Axis max</label>
-            <input type="number" id="optMax" value="6" step="0.5">
+            <input type="number" id="optMax" step="0.5" placeholder="6 auto">
           </div>
           <div class="opt" title="Replaces the date label under the title; blank keeps the existing label"><label
               for="optDate">Date label</label>
@@ -518,6 +519,8 @@
               <option value="pdf" selected>PDF</option>
               <option value="ai">AI</option>
               <option value="svg">SVG</option>
+              <option value="png">PNG</option>
+              <option value="jpg">JPG</option>
             </select>
           </div>
           <div class="opt" title="Spreadsheet worksheet to parse; Auto checks Formulas first, then compatible sheets">
@@ -1186,6 +1189,21 @@
         ];
       }
 
+      function centeredTextMatrix(matrix, oldFont, oldText, newFont, newText) {
+        const m = matrix.slice();
+        const oldW = Math.max(0, oldFont.widthOf(cleanEditableText(oldText), 1));
+        const newW = Math.max(0, newFont.widthOf(cleanEditableText(newText), 1));
+        const anchorX = matrix[4] + matrix[0] * oldW / 2;
+        const anchorY = matrix[5] + matrix[1] * oldW / 2;
+        m[4] = anchorX - matrix[0] * newW / 2;
+        m[5] = anchorY - matrix[1] * newW / 2;
+        return m;
+      }
+
+      function paddedRect(rect, pad) {
+        return [rect[0] - pad, rect[1] - pad, rect[2] + pad, rect[3] + pad];
+      }
+
 
       function showMatrix(show, seg) {
         return (show && show.matrix) || (seg && seg.matrix) || [seg && seg.size || 12, 0, 0, seg && seg.size || 12, seg && seg.x || 0, seg && seg.y || 0];
@@ -1801,22 +1819,28 @@
         legendOut.push('ET');
 
         if (dateSeg) {
-          const currentDateText = opts.dateText || dateSeg.shows.map(s => s.text).join('').trim();
-          const dSize = dateSeg.size || 40;
-          const oldLeft = Math.min(...dateSeg.shows.map(s => s.x));
-          const oldApproxW = dateSeg.shows.reduce((s, sh) => s + sh.text.length, 0) * dSize * 0.45;
-          const cxDate = oldLeft + oldApproxW / 2;
-          let editW = Math.max(oldApproxW, 180);
+          const oldDateText = dateSeg.shows.map(s => s.text).join('').trim();
+          const currentDateText = opts.dateText || oldDateText;
+          const dateMatrix = showMatrix(dateSeg.shows[0], dateSeg).slice();
+          const sourceDateFont = await fontForResource(dateSeg.fontRes, oldDateText || currentDateText || 'Date', fbBold, 'Date');
+          const sourceRect = textBoundsFor(sourceDateFont, oldDateText || currentDateText || 'Date', dateMatrix);
+          let editRect = paddedRect(sourceRect, 8);
 
           if (opts.dateText) {
             const dFont = await fontForResource(dateSeg.fontRes, opts.dateText, fbBold, 'Date');
-            const w = dFont.widthOf(opts.dateText, dSize);
-            editW = Math.max(editW, w);
+            const drawMatrix = centeredTextMatrix(dateMatrix, sourceDateFont, oldDateText, dFont, opts.dateText);
+            const drawRect = textBoundsFor(dFont, opts.dateText, drawMatrix);
+            editRect = paddedRect([
+              Math.min(sourceRect[0], drawRect[0]),
+              Math.min(sourceRect[1], drawRect[1]),
+              Math.max(sourceRect[2], drawRect[2]),
+              Math.max(sourceRect[3], drawRect[3]),
+            ], 8);
 
             dateOut.push('BT');
             dateOut.push(`${fmt(dateSeg.fill[0])} ${fmt(dateSeg.fill[1])} ${fmt(dateSeg.fill[2])} rg`);
             dateOut.push(`${dFont.res} 1 Tf`);
-            dateOut.push(`${fmt(dSize)} 0 0 ${fmt(dSize)} ${fmt(cxDate - w / 2)} ${fmt(dateSeg.y)} Tm`);
+            dateOut.push(textMatrixToTm(drawMatrix));
             dateOut.push(`${dFont.encode(opts.dateText)} Tj`);
             dateOut.push('ET');
           }
@@ -1824,7 +1848,7 @@
           editItems.push({
             type: 'date',
             value: currentDateText,
-            rect: [cxDate - editW / 2 - 8, dateSeg.y - dSize * 0.2, cxDate + editW / 2 + 8, dateSeg.y + dSize * 1.05]
+            rect: editRect
           });
         }
 
@@ -2184,22 +2208,28 @@
         }
 
         if (dateSeg) {
-          const currentDateText = opts.dateText || dateSeg.shows.map(s => s.text).join('').trim();
-          const dSize = dateSeg.size || 40;
-          const oldLeft = Math.min(...dateSeg.shows.map(s => s.x));
-          const oldApproxW = dateSeg.shows.reduce((s, sh) => s + sh.text.length, 0) * dSize * 0.45;
-          const cxDate = oldLeft + oldApproxW / 2;
-          let editW = Math.max(oldApproxW, 180);
+          const oldDateText = dateSeg.shows.map(s => s.text).join('').trim();
+          const currentDateText = opts.dateText || oldDateText;
+          const dateMatrix = showMatrix(dateSeg.shows[0], dateSeg).slice();
+          const sourceDateFont = await fontForResource(dateSeg.fontRes, oldDateText || currentDateText || 'Date', fbBold, 'Date');
+          const sourceRect = textBoundsFor(sourceDateFont, oldDateText || currentDateText || 'Date', dateMatrix);
+          let editRect = paddedRect(sourceRect, 8);
 
           if (opts.dateText) {
             const dFont = await fontForResource(dateSeg.fontRes, opts.dateText, fbBold, 'Date');
-            const w = dFont.widthOf(opts.dateText, dSize);
-            editW = Math.max(editW, w);
+            const drawMatrix = centeredTextMatrix(dateMatrix, sourceDateFont, oldDateText, dFont, opts.dateText);
+            const drawRect = textBoundsFor(dFont, opts.dateText, drawMatrix);
+            editRect = paddedRect([
+              Math.min(sourceRect[0], drawRect[0]),
+              Math.min(sourceRect[1], drawRect[1]),
+              Math.max(sourceRect[2], drawRect[2]),
+              Math.max(sourceRect[3], drawRect[3]),
+            ], 8);
 
             dateOut.push('BT');
             dateOut.push(`${fmt(dateSeg.fill[0])} ${fmt(dateSeg.fill[1])} ${fmt(dateSeg.fill[2])} rg`);
             dateOut.push(`${dFont.res} 1 Tf`);
-            dateOut.push(`${fmt(dSize)} 0 0 ${fmt(dSize)} ${fmt(cxDate - w / 2)} ${fmt(dateSeg.y)} Tm`);
+            dateOut.push(textMatrixToTm(drawMatrix));
             dateOut.push(`${dFont.encode(opts.dateText)} Tj`);
             dateOut.push('ET');
           }
@@ -2207,7 +2237,7 @@
           editItems.push({
             type: 'date',
             value: currentDateText,
-            rect: [cxDate - editW / 2 - 8, dateSeg.y - dSize * 0.2, cxDate + editW / 2 + 8, dateSeg.y + dSize * 1.05]
+            rect: editRect
           });
         }
 
@@ -3056,7 +3086,12 @@
           hit.style.top = top + 'px';
           hit.style.width = width + 'px';
           hit.style.height = height + 'px';
-          hit.addEventListener('click', () => startPreviewEdit(hit, item));
+          hit.addEventListener('pointerdown', e => {
+            e.preventDefault();
+            e.stopPropagation();
+            startPreviewEdit(hit, item);
+          });
+          hit.addEventListener('click', e => e.stopPropagation());
 
           layer.appendChild(hit);
         }
@@ -3096,10 +3131,17 @@
           input.step = '1';
         }
 
+        const stopInputEvent = e => e.stopPropagation();
+        const finishFromOutside = e => {
+          if (done || e.target === input) return;
+          finish(true);
+        };
+
         function finish(save) {
           if (done) return;
           done = true;
 
+          document.removeEventListener('pointerdown', finishFromOutside, true);
           if (save) commitPreviewEdit(item, input.value);
 
           input.remove();
@@ -3110,17 +3152,29 @@
 
         activePreviewEdit = { input, finish };
 
-        input.addEventListener('keydown', e => {
-          if (e.key === 'Enter') finish(true);
-          if (e.key === 'Escape') finish(false);
+        ['pointerdown', 'mousedown', 'mouseup', 'click', 'dblclick'].forEach(type => {
+          input.addEventListener(type, stopInputEvent);
         });
 
-        input.addEventListener('blur', () => finish(true));
+        input.addEventListener('keydown', e => {
+          e.stopPropagation();
+          if (e.key === 'Enter') {
+            e.preventDefault();
+            finish(true);
+          } else if (e.key === 'Escape') {
+            e.preventDefault();
+            finish(false);
+          }
+        });
 
         hit.style.display = 'none';
         layer.appendChild(input);
         input.focus();
         input.select();
+
+        requestAnimationFrame(() => {
+          if (!done) document.addEventListener('pointerdown', finishFromOutside, true);
+        });
       }
 
       function commitPreviewEdit(item, value) {
@@ -3180,6 +3234,37 @@
         }
       }
 
+      function canvasToBlob(canvas, type, quality) {
+        return new Promise((resolve, reject) => {
+          canvas.toBlob(blob => blob ? resolve(blob) : reject(new Error('Could not create raster export blob.')), type, quality);
+        });
+      }
+
+      async function pdfBytesToRasterBlob(bytes, type) {
+        if (!window.pdfjsLib) {
+          throw new Error('PNG/JPG export requires PDF.js, which is unavailable in this browser build.');
+        }
+
+        const doc = await pdfjsLib.getDocument({ data: bytes.slice() }).promise;
+
+        try {
+          const page = await doc.getPage(1);
+          const viewport = page.getViewport({ scale: 2 });
+          const canvas = document.createElement('canvas');
+          const ctx = canvas.getContext('2d', { alpha: false });
+
+          canvas.width = Math.ceil(viewport.width);
+          canvas.height = Math.ceil(viewport.height);
+          ctx.fillStyle = '#fff';
+          ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+          await page.render({ canvasContext: ctx, viewport }).promise;
+          return canvasToBlob(canvas, type, type === 'image/jpeg' ? 0.92 : undefined);
+        } finally {
+          doc.destroy();
+        }
+      }
+
       resetSheetOptions();
 
       if (window.ResizeObserver) {
@@ -3201,6 +3286,8 @@
         try {
           if (format === 'svg') {
             blob = new Blob([await pdfBytesToSvg(lastBytes)], { type: 'image/svg+xml' });
+          } else if (format === 'png' || format === 'jpg') {
+            blob = await pdfBytesToRasterBlob(lastBytes, format === 'jpg' ? 'image/jpeg' : 'image/png');
           } else {
             blob = new Blob([lastBytes], { type: 'application/pdf' });
           }
