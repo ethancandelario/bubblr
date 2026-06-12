@@ -5,7 +5,8 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>bubblr</title>
-  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2224%22%20height%3D%2224%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22%237d6f76%22%20stroke-width%3D%222%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Ccircle%20cx%3D%227.5%22%20cy%3D%227.5%22%20r%3D%22.5%22%20fill%3D%22%23E5751F%22%20stroke%3D%22%23E5751F%22%2F%3E%3Ccircle%20cx%3D%2218.5%22%20cy%3D%225.5%22%20r%3D%22.5%22%20fill%3D%22%23E5751F%22%20stroke%3D%22%23E5751F%22%2F%3E%3Ccircle%20cx%3D%2211.5%22%20cy%3D%2211.5%22%20r%3D%22.5%22%20fill%3D%22%23E5751F%22%20stroke%3D%22%23E5751F%22%2F%3E%3Ccircle%20cx%3D%227.5%22%20cy%3D%2216.5%22%20r%3D%22.5%22%20fill%3D%22%23E5751F%22%20stroke%3D%22%23E5751F%22%2F%3E%3Ccircle%20cx%3D%2217.5%22%20cy%3D%2214.5%22%20r%3D%22.5%22%20fill%3D%22%23E5751F%22%20stroke%3D%22%23E5751F%22%2F%3E%3Cpath%20d%3D%22M3%203v16a2%202%200%200%200%202%202h16%22%2F%3E%3C%2Fsvg%3E">
+  <link rel="icon" type="image/svg+xml"
+    href="data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2224%22%20height%3D%2224%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22%237d6f76%22%20stroke-width%3D%222%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Ccircle%20cx%3D%227.5%22%20cy%3D%227.5%22%20r%3D%22.5%22%20fill%3D%22%23E5751F%22%20stroke%3D%22%23E5751F%22%2F%3E%3Ccircle%20cx%3D%2218.5%22%20cy%3D%225.5%22%20r%3D%22.5%22%20fill%3D%22%23E5751F%22%20stroke%3D%22%23E5751F%22%2F%3E%3Ccircle%20cx%3D%2211.5%22%20cy%3D%2211.5%22%20r%3D%22.5%22%20fill%3D%22%23E5751F%22%20stroke%3D%22%23E5751F%22%2F%3E%3Ccircle%20cx%3D%227.5%22%20cy%3D%2216.5%22%20r%3D%22.5%22%20fill%3D%22%23E5751F%22%20stroke%3D%22%23E5751F%22%2F%3E%3Ccircle%20cx%3D%2217.5%22%20cy%3D%2214.5%22%20r%3D%22.5%22%20fill%3D%22%23E5751F%22%20stroke%3D%22%23E5751F%22%2F%3E%3Cpath%20d%3D%22M3%203v16a2%202%200%200%200%202%202h16%22%2F%3E%3C%2Fsvg%3E">
   <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/pako/2.1.0/pako.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
@@ -259,6 +260,57 @@
       width: 132px
     }
 
+    .optGroups {
+      width: 100%;
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 12px;
+      margin: 0 0 12px
+    }
+
+    .optGroup {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 11px 12px 12px;
+      background: #fff
+    }
+
+    .optGroup .opts {
+      margin-bottom: 0
+    }
+
+    .opt input#optStrokeW,
+    .opt input#optNumSize {
+      width: 92px
+    }
+
+    .hexPick {
+      display: flex;
+      align-items: center;
+      gap: 6px
+    }
+
+    .hexPick .swatch {
+      width: 26px;
+      height: 30px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: #000;
+      padding: 0;
+      cursor: text
+    }
+
+    .hexPick input {
+      width: 86px;
+      font-family: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
+      text-transform: uppercase
+    }
+
+    .hexPick.bad input,
+    .hexPick.bad .swatch {
+      border-color: #b3261e
+    }
+
     .opt select#optFormat {
       width: 104px
     }
@@ -491,7 +543,7 @@
       <summary>Advanced</summary>
       <div class="adv">
         <div class="opts">
-          <div class="opt" title="How many top-ranked risks get the emphasized bubble style"><label for="optTopN">Top
+          <div class="opt" title="How many risks get the emphasized bubble style"><label for="optTopN">Emphasized
               N</label>
             <input type="number" id="optTopN" value="10" min="0" step="1">
           </div>
@@ -501,19 +553,19 @@
           <div class="opt" title="Value mapped to the right/top edge of the plot"><label for="optMax">Axis max</label>
             <input type="number" id="optMax" step="0.5" placeholder="6 auto">
           </div>
-          <div class="opt" title="Replaces the date label under the title; blank keeps the existing label"><label
-              for="optDate">Date label</label>
-            <input type="text" id="optDate" value="">
-          </div>
           <div class="opt"
             title="Minimum bubble diameter in PDF points; blank keeps the size inferred from the Illustrator file">
-            <label for="optBubbleMin">Min bubble size</label>
+            <label for="optBubbleMin">Min size</label>
             <input type="number" id="optBubbleMin" min="1" step="0.5" placeholder="Auto">
           </div>
           <div class="opt"
             title="Maximum bubble diameter in PDF points; blank keeps the size inferred from the Illustrator file">
-            <label for="optBubbleMax">Max bubble size</label>
+            <label for="optBubbleMax">Max size</label>
             <input type="number" id="optBubbleMax" min="1" step="0.5" placeholder="Auto">
+          </div>
+          <div class="opt" title="Replaces the date label under the title; blank keeps the existing label"><label
+              for="optDate">Date label</label>
+            <input type="text" id="optDate" value="">
           </div>
           <div class="opt" title="Format used when Download is pressed"><label for="optFormat">Export format</label>
             <select id="optFormat">
@@ -529,6 +581,65 @@
             <select id="optSheet" disabled>
               <option value="">Auto</option>
             </select>
+          </div>
+        </div>
+        <div class="optGroups">
+          <div class="optGroup" id="bubbleStyleGroup">
+            <div class="opts">
+              <div class="opt" title="Fill color used for emphasized bubbles; blank keeps the Illustrator file value">
+                <label for="optTopFill">Emphasized fill</label>
+                <div class="hexPick"><button type="button" class="swatch" data-color-for="optTopFill"
+                    aria-label="Edit emphasized fill color"></button><input type="text" id="optTopFill" maxlength="7"
+                    spellcheck="false" placeholder="Auto"></div>
+              </div>
+              <div class="opt" title="Stroke color used for emphasized bubbles; blank keeps the Illustrator file value">
+                <label for="optTopStroke">Emphasized stroke</label>
+                <div class="hexPick"><button type="button" class="swatch" data-color-for="optTopStroke"
+                    aria-label="Edit emphasized stroke color"></button><input type="text" id="optTopStroke"
+                    maxlength="7" spellcheck="false" placeholder="Auto"></div>
+              </div>
+              <div class="opt" title="Fill color used for standard bubbles; blank keeps the Illustrator file value">
+                <label for="optStdFill">Standard fill</label>
+                <div class="hexPick"><button type="button" class="swatch" data-color-for="optStdFill"
+                    aria-label="Edit standard fill color"></button><input type="text" id="optStdFill" maxlength="7"
+                    spellcheck="false" placeholder="Auto"></div>
+              </div>
+              <div class="opt" title="Stroke color used for standard bubbles; blank keeps the Illustrator file value">
+                <label for="optStdStroke">Standard stroke</label>
+                <div class="hexPick"><button type="button" class="swatch" data-color-for="optStdStroke"
+                    aria-label="Edit standard stroke color"></button><input type="text" id="optStdStroke" maxlength="7"
+                    spellcheck="false" placeholder="Auto"></div>
+              </div>
+              <div class="opt" title="Bubble stroke thickness in PDF points; blank keeps the Illustrator file value">
+                <label for="optStrokeW">Stroke width</label>
+                <input type="number" id="optStrokeW" min="0" step="0.25" placeholder="Auto">
+              </div>
+            </div>
+          </div>
+          <div class="optGroup" id="labelStyleGroup">
+            <div class="opts">
+              <div class="opt" title="Color used for numbers inside bubbles; blank keeps the Illustrator file value">
+                <label for="optNumColor">Label color</label>
+                <div class="hexPick"><button type="button" class="swatch" data-color-for="optNumColor"
+                    aria-label="Edit label color"></button><input type="text" id="optNumColor" maxlength="7"
+                    spellcheck="false" placeholder="Auto"></div>
+              </div>
+              <div class="opt" title="Bubble number font size in PDF points; blank keeps the Illustrator file value">
+                <label for="optNumSize">Label size</label>
+                <input type="number" id="optNumSize" min="1" step="0.5" placeholder="Auto">
+              </div>
+            </div>
+          </div>
+          <div class="optGroup" id="legendStyleGroup">
+            <div class="opts">
+              <div class="opt"
+                title="Color used for risk numbers and names in the legend; blank keeps the Illustrator file value">
+                <label for="optLegendColor">Legend color</label>
+                <div class="hexPick"><button type="button" class="swatch" data-color-for="optLegendColor"
+                    aria-label="Edit legend color"></button><input type="text" id="optLegendColor" maxlength="7"
+                    spellcheck="false" placeholder="Auto"></div>
+              </div>
+            </div>
           </div>
         </div>
         <div class="dataMsg" id="dataMsg">No parseable risk data on this worksheet.</div>
@@ -1268,6 +1379,9 @@
         return best;
       };
 
+      const isRgb = color => Array.isArray(color) && color.length === 3 && color.every(v => typeof v === 'number' && isFinite(v));
+      const cloneRgb = color => isRgb(color) ? color.map(v => Math.max(0, Math.min(1, v))) : null;
+
       const DEFAULTS = {
         topFill: [0.525, 0.122, 0.255], topStroke: [0.898, 0.459, 0.122],
         stdFill: [0.459, 0.471, 0.482], stdStroke: [0.843, 0.824, 0.796],
@@ -1315,9 +1429,84 @@
         };
       }
 
+      function styleTextSegments(segments, plotRect) {
+        const inPlot = (x, y) => x > plotRect.x - 2 && x < plotRect.x + plotRect.w + 2 && y > plotRect.y - 2 && y < plotRect.y + plotRect.h + 2;
+        const KEEP = new Set(['graph legend', 'number', 'risk', 'graphlegend', 'graph', 'legend']);
+        let numSeg = null, legendNamesSeg = null;
+
+        for (const seg of segments || []) {
+          if (!seg || !seg.shows || !seg.shows.length) continue;
+
+          const allDigits = seg.shows.every(s => /^\d+$/.test(s.text.trim()) || s.text.trim() === '');
+
+          if (inPlot(seg.x, seg.y) && allDigits) {
+            if (!numSeg || seg.shows.length > numSeg.shows.length) numSeg = seg;
+            continue;
+          }
+
+          if (seg.x > plotRect.x + plotRect.w - 5) {
+            const letterShows = seg.shows.filter(s => /[A-Za-z]/.test(s.text));
+            const isHeaderSeg = letterShows.length > 0 && letterShows.every(s => KEEP.has(s.text.trim().toLowerCase().replace(/\s+/g, ' ')))
+              && seg.shows.length <= 4;
+
+            if (!isHeaderSeg && letterShows.length >= 2 &&
+              (!legendNamesSeg || letterShows.length > legendNamesSeg.shows.filter(s => /[A-Za-z]/.test(s.text)).length)) {
+              legendNamesSeg = seg;
+            }
+          }
+        }
+
+        return { numSeg, legendNamesSeg };
+      }
+
+      function inferBubbleStyle(bubbles, segments, plotRect) {
+        const style = JSON.parse(JSON.stringify(DEFAULTS));
+        const fills = (bubbles || []).filter(b => /^f/i.test(b.paint) || /^b/i.test(b.paint));
+        const strokes = (bubbles || []).filter(b => b.paint === 'S' || b.paint === 's' || /^b/i.test(b.paint));
+
+        if (fills.length) {
+          const topIdx = [], stdIdx = [];
+          fills.forEach(b => (nearest(b.fill, [DEFAULTS.topFill, DEFAULTS.stdFill]) === 0 ? topIdx : stdIdx).push(b));
+          if (topIdx.length) style.topFill = topIdx[0].fill.slice();
+          if (stdIdx.length) style.stdFill = stdIdx[0].fill.slice();
+        }
+
+        if (strokes.length) {
+          const t = [], s2 = [];
+          strokes.forEach(b => (nearest(b.stroke, [DEFAULTS.topStroke, DEFAULTS.stdStroke]) === 0 ? t : s2).push(b));
+          if (t.length) style.topStroke = t[0].stroke.slice();
+          if (s2.length) style.stdStroke = s2[0].stroke.slice();
+          style.strokeW = strokes[0].lw || DEFAULTS.strokeW;
+        }
+
+        style.radii = inferRadiiFromBubbles(fills);
+
+        if (plotRect) {
+          const { numSeg, legendNamesSeg } = styleTextSegments(segments, plotRect);
+          if (numSeg && numSeg.fill) style.numColor = numSeg.fill.slice();
+          if (numSeg && isFinite(numSeg.size)) style.numSize = numSeg.size;
+          if (legendNamesSeg && legendNamesSeg.fill) style.legendColor = legendNamesSeg.fill.slice();
+        }
+
+        return style;
+      }
+
+      function applyBubbleStyleOverrides(style, opts) {
+        ['topFill', 'topStroke', 'stdFill', 'stdStroke', 'numColor', 'legendColor'].forEach(key => {
+          const color = cloneRgb(opts[key]);
+          if (color) style[key] = color;
+        });
+
+        const strokeW = parseFloat(opts.strokeW);
+        if (isFinite(strokeW) && strokeW >= 0) style.strokeW = strokeW;
+
+        const numSize = parseFloat(opts.numSize);
+        if (isFinite(numSize) && numSize > 0) style.numSize = numSize;
+      }
+
       /* ---------------- main generation ---------------- */
       async function generate(pdfBytes, risks, opts) {
-        opts = Object.assign({ topN: 10, axisMin: 0, axisMax: 6, dateText: null, bubbleMinDiameter: null, bubbleMaxDiameter: null, staticTextEdits: null, fontFiles: null, fontkit: null, log: () => { } }, opts || {});
+        opts = Object.assign({ topN: 10, axisMin: 0, axisMax: 6, dateText: null, bubbleMinDiameter: null, bubbleMaxDiameter: null, topFill: null, topStroke: null, stdFill: null, stdStroke: null, strokeW: null, numSize: null, numColor: null, legendColor: null, staticTextEdits: null, fontFiles: null, fontkit: null, log: () => { } }, opts || {});
         const log = opts.log;
 
         risks = risks
@@ -1366,28 +1555,10 @@
         const bubbles = circles.filter(c => inPlot(c.cx, c.cy) && c.range);
         log(`Found ${bubbles.length} bubble paint operations (${new Set(bubbles.map(b => b.cx.toFixed(1) + ',' + b.cy.toFixed(1))).size} distinct bubbles) to remove.`);
 
-        const style = JSON.parse(JSON.stringify(DEFAULTS));
-        const fills = bubbles.filter(b => /^f/i.test(b.paint) || /^b/i.test(b.paint));
-        const strokes = bubbles.filter(b => b.paint === 'S' || b.paint === 's' || /^b/i.test(b.paint));
-
-        if (fills.length) {
-          const topIdx = [], stdIdx = [];
-          fills.forEach(b => (nearest(b.fill, [DEFAULTS.topFill, DEFAULTS.stdFill]) === 0 ? topIdx : stdIdx).push(b));
-          if (topIdx.length) style.topFill = topIdx[0].fill;
-          if (stdIdx.length) style.stdFill = stdIdx[0].fill;
-        }
-
-        if (strokes.length) {
-          const t = [], s2 = [];
-          strokes.forEach(b => (nearest(b.stroke, [DEFAULTS.topStroke, DEFAULTS.stdStroke]) === 0 ? t : s2).push(b));
-          if (t.length) style.topStroke = t[0].stroke;
-          if (s2.length) style.stdStroke = s2[0].stroke;
-          style.strokeW = strokes[0].lw || 4;
-        }
-
-        style.radii = inferRadiiFromBubbles(fills);
+        const style = inferBubbleStyle(bubbles, segments, plotRect);
         const sourceRadii = cloneRadii(style.radii);
         applyBubbleSizeOverride(style, opts, sourceRadii);
+        applyBubbleStyleOverrides(style, opts);
 
         log(`Velocity radii: 1→${style.radii[1].toFixed(1)}  3→${style.radii[3].toFixed(1)}  5→${style.radii[5].toFixed(1)}; stroke ${style.strokeW}pt`);
 
@@ -1608,8 +1779,8 @@
           return v < 3 ? r[1] + (v - 1) / 2 * (r[3] - r[1]) : r[3] + (v - 3) / 2 * (r[5] - r[3]);
         };
 
-        const numColor = (numSeg && numSeg.fill) || style.numColor;
-        const numSize0 = (numSeg && numSeg.size) || style.numSize;
+        const numColor = style.numColor;
+        const numSize0 = style.numSize;
 
         const editItems = [];
         const staticOut = [];
@@ -1741,10 +1912,12 @@
 
           bubbleOut.push('q');
           bubbleOut.push(`${fmt(item.fill[0])} ${fmt(item.fill[1])} ${fmt(item.fill[2])} rg`);
-          bubbleOut.push(`${fmt(item.stroke[0])} ${fmt(item.stroke[1])} ${fmt(item.stroke[2])} RG`);
-          bubbleOut.push(`${fmt(style.strokeW)} w`);
+          if (style.strokeW > 0) {
+            bubbleOut.push(`${fmt(item.stroke[0])} ${fmt(item.stroke[1])} ${fmt(item.stroke[2])} RG`);
+            bubbleOut.push(`${fmt(style.strokeW)} w`);
+          }
           bubbleOut.push(circlePath(item.cx, item.cy, item.rad));
-          bubbleOut.push('B');
+          bubbleOut.push(style.strokeW > 0 ? 'B' : 'f');
           bubbleOut.push('BT');
           bubbleOut.push(`${fmt(numColor[0])} ${fmt(numColor[1])} ${fmt(numColor[2])} rg`);
           bubbleOut.push(`${numFont.res} 1 Tf`);
@@ -1767,7 +1940,7 @@
           namesX: legendNamesSeg ? legendNamesSeg.x : plotRect.x + plotRect.w + 132,
           topY: legendNamesSeg ? legendNamesSeg.y : plotRect.y + plotRect.h - 96,
           size: legendNamesSeg ? legendNamesSeg.size : DEFAULTS.legend.size,
-          color: (legendNamesSeg && legendNamesSeg.fill) || style.legendColor,
+          color: style.legendColor,
         };
 
         const spacing0 = lg.size * DEFAULTS.legend.lineFactor;
@@ -2306,7 +2479,8 @@
         const inPlot = (x, y) => x > plotRect.x - 2 && x < plotRect.x + plotRect.w + 2 && y > plotRect.y - 2 && y < plotRect.y + plotRect.h + 2;
         const plotBubbles = circles.filter(c => inPlot(c.cx, c.cy));
         const distinct = new Set(plotBubbles.map(c => c.cx.toFixed(1) + ',' + c.cy.toFixed(1)));
-        const radii = inferRadiiFromBubbles(plotBubbles.filter(b => /^f/i.test(b.paint) || /^b/i.test(b.paint)));
+        const style = inferBubbleStyle(plotBubbles, segments, plotRect);
+        const radii = style.radii;
 
         let dateText = null;
         for (const seg of segments) {
@@ -2322,6 +2496,7 @@
           dateText,
           radii,
           bubbleDiameters: { min: radii[1] * 2, mid: radii[3] * 2, max: radii[5] * 2 },
+          style,
           pageSize: { w: page.getWidth(), h: page.getHeight() }
         };
       }
@@ -2378,6 +2553,58 @@
           const page = doc.getPage(0);
           reservePreviewBox(page.getWidth(), page.getHeight());
         } catch (e) { /* keep the temporary preview box */ }
+      }
+
+      function rgbToHex(color) {
+        const toByte = v => Math.max(0, Math.min(255, Math.round((isFinite(v) ? v : 0) * 255)));
+        return '#' + (color || [0, 0, 0]).slice(0, 3).map(v => toByte(v).toString(16).padStart(2, '0')).join('').toUpperCase();
+      }
+
+      function normalizeHex(hex) {
+        const raw = String(hex || '').trim().replace(/^#/, '');
+        if (/^[0-9a-f]{3}$/i.test(raw)) return '#' + raw.split('').map(c => c + c).join('').toUpperCase();
+        if (/^[0-9a-f]{6}$/i.test(raw)) return '#' + raw.toUpperCase();
+        return null;
+      }
+
+      function hexToRgb(hex) {
+        const normalized = normalizeHex(hex);
+        if (!normalized) return null;
+        return [1, 3, 5].map(i => parseInt(normalized.slice(i, i + 2), 16) / 255);
+      }
+
+      function updateHexSwatch(input) {
+        const wrap = input.closest('.hexPick');
+        const swatch = wrap && wrap.querySelector('.swatch');
+        const typed = String(input.value || '').trim();
+        const normalized = normalizeHex(typed);
+        const placeholder = normalizeHex(input.placeholder);
+        if (swatch) swatch.style.background = normalized || placeholder || 'transparent';
+        if (wrap) wrap.classList.toggle('bad', !!typed && !normalized);
+        return normalized;
+      }
+
+      function setHexPlaceholder(id, value) {
+        const input = $(id);
+        if (!input) return;
+        input.placeholder = normalizeHex(value) || value || 'Auto';
+        updateHexSwatch(input);
+      }
+
+      function fmtPlaceholderNumber(n) {
+        return isFinite(n) ? `${Math.round(n * 100) / 100} auto` : 'Auto';
+      }
+
+      function populateBubbleStyleControls(style) {
+        if (!style) return;
+        if (style.topFill) setHexPlaceholder('optTopFill', rgbToHex(style.topFill));
+        if (style.topStroke) setHexPlaceholder('optTopStroke', rgbToHex(style.topStroke));
+        if (style.stdFill) setHexPlaceholder('optStdFill', rgbToHex(style.stdFill));
+        if (style.stdStroke) setHexPlaceholder('optStdStroke', rgbToHex(style.stdStroke));
+        if (style.numColor) setHexPlaceholder('optNumColor', rgbToHex(style.numColor));
+        if (style.legendColor) setHexPlaceholder('optLegendColor', rgbToHex(style.legendColor));
+        $('optStrokeW').placeholder = fmtPlaceholderNumber(style.strokeW);
+        $('optNumSize').placeholder = fmtPlaceholderNumber(style.numSize);
       }
 
       function hasCoreAssets() {
@@ -2609,6 +2836,8 @@
             $('optBubbleMax').placeholder = `${info.bubbleDiameters.max.toFixed(1)} auto`;
           }
 
+          populateBubbleStyleControls(info.style);
+
           log(`Illustrator file "${f.name}":`, info);
 
         } catch (err) {
@@ -2722,7 +2951,31 @@
         if (e.key === 'Enter' || e.key === ' ') e.stopPropagation();
       });
 
-      ['optTopN', 'optMin', 'optMax', 'optDate', 'optBubbleMin', 'optBubbleMax'].forEach(id => {
+      const colorControlIds = ['optTopFill', 'optTopStroke', 'optStdFill', 'optStdStroke', 'optNumColor', 'optLegendColor'];
+
+      colorControlIds.forEach(id => {
+        const input = $(id);
+        const swatch = document.querySelector(`.swatch[data-color-for="${id}"]`);
+        updateHexSwatch(input);
+
+        input.addEventListener('input', () => {
+          updateHexSwatch(input);
+          rememberAdvancedOpen();
+          schedule();
+        });
+
+        input.addEventListener('blur', () => {
+          const normalized = updateHexSwatch(input);
+          if (normalized) input.value = normalized;
+        });
+
+        if (swatch) swatch.addEventListener('click', () => {
+          input.focus();
+          input.select();
+        });
+      });
+
+      ['optTopN', 'optMin', 'optMax', 'optDate', 'optBubbleMin', 'optBubbleMax', 'optNumSize', 'optStrokeW'].forEach(id => {
         $(id).addEventListener('input', () => {
           rememberAdvancedOpen();
           if (id === 'optTopN') paintTopMarks();
@@ -2751,6 +3004,14 @@
         dateText: $('optDate').value.trim() || null,
         bubbleMinDiameter: $('optBubbleMin').value === '' ? null : parseFloat($('optBubbleMin').value),
         bubbleMaxDiameter: $('optBubbleMax').value === '' ? null : parseFloat($('optBubbleMax').value),
+        topFill: hexToRgb($('optTopFill').value),
+        topStroke: hexToRgb($('optTopStroke').value),
+        stdFill: hexToRgb($('optStdFill').value),
+        stdStroke: hexToRgb($('optStdStroke').value),
+        strokeW: $('optStrokeW').value === '' ? null : parseFloat($('optStrokeW').value),
+        numSize: $('optNumSize').value === '' ? null : parseFloat($('optNumSize').value),
+        numColor: hexToRgb($('optNumColor').value),
+        legendColor: hexToRgb($('optLegendColor').value),
         staticTextEdits,
       });
 
@@ -2984,8 +3245,11 @@
         pctx.fillRect(0, 0, prev.width, prev.height);
         if (hadPreview) pctx.drawImage(live, 0, 0, prev.width, prev.height);
 
-        live.width = next.width;
-        live.height = next.height;
+        if (live.width !== next.width) live.width = next.width;
+        if (live.height !== next.height) live.height = next.height;
+
+        ctx.globalAlpha = 1;
+        ctx.drawImage(prev, 0, 0);
 
         if (instant) {
           ctx.drawImage(next, 0, 0);
