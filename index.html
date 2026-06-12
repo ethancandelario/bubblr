@@ -543,7 +543,7 @@
       <summary>Advanced</summary>
       <div class="adv">
         <div class="opts">
-          <div class="opt" title="How many risks get the emphasized bubble style"><label for="optTopN">Emphasized
+          <div class="opt" title="How many bubbles get the emphasized style"><label for="optTopN">Emphasized
               N</label>
             <input type="number" id="optTopN" value="10" min="0" step="1">
           </div>
@@ -633,7 +633,7 @@
           <div class="optGroup" id="legendStyleGroup">
             <div class="opts">
               <div class="opt"
-                title="Color used for risk numbers and names in the legend; blank keeps the Illustrator file value">
+                title="Color used for bubble numbers and names in the legend; blank keeps the Illustrator file value">
                 <label for="optLegendColor">Legend color</label>
                 <div class="hexPick"><button type="button" class="swatch" data-color-for="optLegendColor"
                     aria-label="Edit legend color"></button><input type="text" id="optLegendColor" maxlength="7"
@@ -642,13 +642,13 @@
             </div>
           </div>
         </div>
-        <div class="dataMsg" id="dataMsg">No parseable risk data on this worksheet.</div>
+        <div class="dataMsg" id="dataMsg">No parseable bubble data on this worksheet.</div>
         <div class="tablewrap" id="tableWrap" style="display:none">
-          <table id="riskTable">
+          <table id="bubbleTable">
             <thead>
               <tr>
                 <th>#</th>
-                <th>Risk</th>
+                <th>Bubble</th>
                 <th>Impact</th>
                 <th>Likelihood</th>
                 <th>Velocity</th>
@@ -659,7 +659,7 @@
             <tbody></tbody>
           </table>
         </div>
-        <button id="addRow" style="display:none" title="Add a risk row">+ row</button>
+        <button id="addRow" style="display:none" title="Add a bubble row">+ row</button>
       </div>
     </details>
   </main>
@@ -680,13 +680,13 @@
       }
       const api = factory(PDFLibRef || (root && root.PDFLib), pakoRef || (root && root.pako));
       if (typeof module === 'object' && module && module.exports) module.exports = api;
-      if (root) root.RiskMapCore = api;
+      if (root) root.BubbleMapCore = api;
     }(typeof self !== 'undefined' ? self : this, function (PDFLib, pako) {
       'use strict';
       const { PDFDocument, PDFName, PDFDict, PDFArray, PDFRef, PDFRawStream, PDFString, PDFNumber, StandardFonts, rgb } = PDFLib;
 
       /* ---------------- spreadsheet parsing ---------------- */
-      function parseRisksFromWorkbook(XLSX, workbook, parseOpts) {
+      function parseBubblesFromWorkbook(XLSX, workbook, parseOpts) {
         parseOpts = parseOpts || {};
         const num = v => (typeof v === 'number' && isFinite(v)) ? v : (typeof v === 'string' && v.trim() !== '' && isFinite(+v) ? +v : null);
         const clean = v => (v == null) ? '' : String(v).replace(/\s+/g, ' ').trim();
@@ -710,7 +710,7 @@
         }
 
         function parseRows(sheetName, rows, headerRowIndex, cols, sourceType) {
-          const risks = [];
+          const bubbles = [];
 
           for (let r = headerRowIndex + 1; r < rows.length; r++) {
             const row = rows[r] || [];
@@ -725,8 +725,8 @@
             const explicitNum = cols.num >= 0 ? num(row[cols.num]) : null;
             const score = cols.score >= 0 ? num(row[cols.score]) : null;
 
-            risks.push({
-              num: explicitNum ?? risks.length + 1,
+            bubbles.push({
+              num: explicitNum ?? bubbles.length + 1,
               name,
               impact,
               likelihood,
@@ -735,16 +735,16 @@
             });
           }
 
-          if (!risks.length) return null;
+          if (!bubbles.length) return null;
 
-          rankRisks(risks);
-          risks.sort((a, b) => a.num - b.num);
+          rankBubbles(bubbles);
+          bubbles.sort((a, b) => a.num - b.num);
 
           return {
             sheetName,
             sourceType,
             headerRow: headerRowIndex + 1,
-            risks,
+            bubbles,
           };
         }
 
@@ -754,11 +754,11 @@
 
             const cols = {
               num: findHeader(row, [/^#$/, /^number$/]),
-              name: findHeader(row, [/^risk$/]),
+              name: findHeader(row, [/^(risk|bubble|item|label|name)$/]),
               likelihood: findHeader(row, [/^x\s*axis\s*-\s*likelihood$/, /^likelihood$/]),
               impact: findHeader(row, [/^y\s*axis\s*-\s*impact$/, /^impact$/]),
               velocity: findHeader(row, [/^bubble\s*size\s*-\s*velocity$/, /^velocity$/]),
-              score: findHeader(row, [/^risk\s*score$/]),
+              score: findHeader(row, [/^(?:(?:risk|bubble|item)\s*)?score$/]),
             };
 
             if (cols.name >= 0 && cols.likelihood >= 0 && cols.impact >= 0) {
@@ -769,21 +769,21 @@
           return null;
         }
 
-        function tryParseRiskRegisterSheet(sheetName, rows) {
+        function tryParseRegisterStyleSheet(sheetName, rows) {
           for (let r = 0; r < Math.min(rows.length, 30); r++) {
             const row = rows[r] || [];
 
             const cols = {
               num: findHeader(row, [/^#$/]),
-              name: findHeader(row, [/^risk$/]),
+              name: findHeader(row, [/^(risk|bubble|item|label|name)$/]),
               impact: findHeader(row, [/^impact$/]),
               likelihood: findHeader(row, [/^likelihood$/]),
               velocity: findHeader(row, [/^velocity/]),
-              score: findHeader(row, [/^risk\s*score$/]),
+              score: findHeader(row, [/^(?:(?:risk|bubble|item)\s*)?score$/]),
             };
 
             if (cols.name >= 0 && cols.impact >= 0 && cols.likelihood >= 0) {
-              const parsed = parseRows(sheetName, rows, r, cols, 'risk register');
+              const parsed = parseRows(sheetName, rows, r, cols, 'register');
               if (parsed) return parsed;
             }
           }
@@ -792,7 +792,7 @@
 
         function tryParseAnySupportedSheet(sheetName) {
           const rows = rowsFor(sheetName);
-          return tryParseFormulaStyleSheet(sheetName, rows) || tryParseRiskRegisterSheet(sheetName, rows);
+          return tryParseFormulaStyleSheet(sheetName, rows) || tryParseRegisterStyleSheet(sheetName, rows);
         }
 
         const selectedSheetName = parseOpts.sheetName && workbook.SheetNames.includes(parseOpts.sheetName)
@@ -802,7 +802,7 @@
         if (selectedSheetName) {
           const parsed = tryParseAnySupportedSheet(selectedSheetName);
           if (parsed) return parsed;
-          throw new Error('Could not find risk data on the selected worksheet "' + selectedSheetName + '".');
+          throw new Error('Could not find bubble data on the selected worksheet "' + selectedSheetName + '".');
         }
 
         const formulasSheetName =
@@ -825,17 +825,17 @@
           workbook.SheetNames[0];
 
         if (registerSheetName) {
-          const parsed = tryParseRiskRegisterSheet(registerSheetName, rowsFor(registerSheetName));
+          const parsed = tryParseRegisterStyleSheet(registerSheetName, rowsFor(registerSheetName));
           if (parsed) return parsed;
         }
 
-        throw new Error('Could not find risk data. Expected the Formulas sheet to contain Risk, X Axis - Likelihood, Y axis - Impact, and Bubble Size - Velocity columns.');
+        throw new Error('Could not find bubble data. Expected columns like Bubble/Risk, X Axis - Likelihood or Likelihood, Y Axis - Impact or Impact, and Velocity.');
       }
 
-      function rankRisks(risks) {
-        const ranked = risks.slice().sort((a, b) => (b.score ?? -Infinity) - (a.score ?? -Infinity));
+      function rankBubbles(bubbles) {
+        const ranked = bubbles.slice().sort((a, b) => (b.score ?? -Infinity) - (a.score ?? -Infinity));
         ranked.forEach((r, i) => { r.rank = (r.score != null) ? i + 1 : r.num; });
-        return risks;
+        return bubbles;
       }
 
       /* ---------------- content-stream tokenizer ---------------- */
@@ -1536,7 +1536,7 @@
 
       function styleTextSegments(segments, plotRect) {
         const inPlot = (x, y) => x > plotRect.x - 2 && x < plotRect.x + plotRect.w + 2 && y > plotRect.y - 2 && y < plotRect.y + plotRect.h + 2;
-        const KEEP = new Set(['graph legend', 'number', 'risk', 'graphlegend', 'graph', 'legend']);
+        const KEEP = new Set(['graph legend', 'number', 'risk', 'risks', 'bubble', 'bubbles', 'graphlegend', 'graph', 'legend']);
         let numSeg = null, legendNamesSeg = null;
 
         for (const seg of segments || []) {
@@ -1610,15 +1610,15 @@
       }
 
       /* ---------------- main generation ---------------- */
-      async function generate(pdfBytes, risks, opts) {
+      async function generate(pdfBytes, bubbles, opts) {
         opts = Object.assign({ topN: 10, axisMin: 0, axisMax: 6, dateText: null, bubbleMinDiameter: null, bubbleMaxDiameter: null, topFill: null, topStroke: null, stdFill: null, stdStroke: null, strokeW: null, numSize: null, numColor: null, legendColor: null, staticTextEdits: null, fontFiles: null, fontkit: null, log: () => { } }, opts || {});
         const log = opts.log;
 
-        risks = risks
+        bubbles = bubbles
           .filter(r => r && r.name && isFinite(r.impact) && isFinite(r.likelihood))
           .map(r => ({ ...r, velocity: isFinite(r.velocity) ? r.velocity : 3, num: isFinite(r.num) ? r.num : 0 }));
 
-        if (!risks.length) throw new Error('No risks with numeric Impact & Likelihood to draw.');
+        if (!bubbles.length) throw new Error('No bubbles with numeric Impact & Likelihood to draw.');
 
         const pdfDoc = await PDFDocument.load(pdfBytes, { ignoreEncryption: true, updateMetadata: false });
         const ctx = pdfDoc.context;
@@ -1659,24 +1659,24 @@
         log(`Plot area: x=${plotRect.x.toFixed(1)} y=${plotRect.y.toFixed(1)} w=${plotRect.w.toFixed(1)} h=${plotRect.h.toFixed(1)}`);
 
         const inPlot = (x, y) => x > plotRect.x - 2 && x < plotRect.x + plotRect.w + 2 && y > plotRect.y - 2 && y < plotRect.y + plotRect.h + 2;
-        const bubbles = circles.filter(c => inPlot(c.cx, c.cy) && c.range);
-        log(`Found ${bubbles.length} bubble paint operations (${new Set(bubbles.map(b => b.cx.toFixed(1) + ',' + b.cy.toFixed(1))).size} distinct bubbles) to remove.`);
+        const sourceBubbles = circles.filter(c => inPlot(c.cx, c.cy) && c.range);
+        log(`Found ${sourceBubbles.length} bubble paint operations (${new Set(sourceBubbles.map(b => b.cx.toFixed(1) + ',' + b.cy.toFixed(1))).size} distinct bubbles) to remove.`);
 
-        const style = inferBubbleStyle(bubbles, segments, plotRect);
+        const style = inferBubbleStyle(sourceBubbles, segments, plotRect);
         const sourceRadii = cloneRadii(style.radii);
         applyBubbleSizeOverride(style, opts, sourceRadii);
         applyBubbleStyleOverrides(style, opts);
 
         log(`Velocity radii: 1→${style.radii[1].toFixed(1)}  3→${style.radii[3].toFixed(1)}  5→${style.radii[5].toFixed(1)}; stroke ${style.strokeW}pt`);
 
-        const removals = bubbles.map(b => b.range);
+        const removals = sourceBubbles.map(b => b.range);
         const textRemovalStarts = new Set();
         const removeShow = show => {
           if (!show) return;
           textRemovalStarts.add(show.start);
           removals.push([show.start, show.end]);
         };
-        const KEEP = new Set(['graph legend', 'number', 'risk', 'graphlegend', 'graph', 'legend']);
+        const KEEP = new Set(['graph legend', 'number', 'risk', 'risks', 'bubble', 'bubbles', 'graphlegend', 'graph', 'legend']);
         let numSeg = null, legendNamesSeg = null, dateSeg = null;
         const legendDigitShows = [];
 
@@ -1801,7 +1801,7 @@
           return fd ? makeOriginalFontAdapter(ctx, fd, res) : null;
         };
 
-        const digitsNeeded = risks.map(r => String(r.num)).join('');
+        const digitsNeeded = bubbles.map(r => String(r.num)).join('');
 
         const modalFont = (seg, filter) => {
           if (!seg) return null;
@@ -1861,7 +1861,7 @@
           return fallback;
         }
 
-        const namesText = risks.map(r => r.name).join('');
+        const namesText = bubbles.map(r => r.name).join('');
         const numFont = await fontForResource(modalFont(numSeg), digitsNeeded, fbBold, 'Bubble-number');
         const legendFont = await fontForResource(modalFont(legendNamesSeg, s2 => /[A-Za-z]/.test(s2.text)), namesText + digitsNeeded, fbReg, 'Legend');
 
@@ -1983,7 +1983,7 @@
           return best.score < score(0, 0) ? best : { dx: 0, dy: 0 };
         }
 
-        const bubbleItems = risks.map(r => {
+        const bubbleItems = bubbles.map(r => {
           const top = (r.rank ?? r.num) <= opts.topN;
           const cx = Math.max(plotRect.x, Math.min(plotRect.x + plotRect.w, X(r.likelihood)));
           const cy = Math.max(plotRect.y, Math.min(plotRect.y + plotRect.h, Y(r.impact)));
@@ -2039,7 +2039,7 @@
 
           if (item.r._id != null) {
             editItems.push({
-              type: 'risk-num',
+              type: 'bubble-num',
               id: item.r._id,
               value: label,
               rect: [labelRect.x0, labelRect.y0, labelRect.x1, labelRect.y1]
@@ -2057,14 +2057,14 @@
         const spacing0 = lg.size * DEFAULTS.legend.lineFactor;
         const bottomMargin = 52;
         const avail = lg.topY - bottomMargin;
-        const spacing = Math.min(spacing0, risks.length > 1 ? avail / (risks.length - 1) : avail);
+        const spacing = Math.min(spacing0, bubbles.length > 1 ? avail / (bubbles.length - 1) : avail);
         const lsize = lg.size * Math.min(1, spacing / spacing0);
         const maxNameW = pageW - lg.namesX - 24;
 
         legendOut.push('BT');
         legendOut.push(`${fmt(lg.color[0])} ${fmt(lg.color[1])} ${fmt(lg.color[2])} rg`);
 
-        risks.slice().sort((a, b) => a.num - b.num).forEach((r, i) => {
+        bubbles.slice().sort((a, b) => a.num - b.num).forEach((r, i) => {
           const y = lg.topY - i * spacing;
           const numLabel = String(r.num);
           const nf = numFont.canRender(numLabel) ? numFont : fbBold;
@@ -2087,13 +2087,13 @@
 
           if (r._id != null) {
             editItems.push({
-              type: 'risk-num',
+              type: 'bubble-num',
               id: r._id,
               value: numLabel,
               rect: [numX - 4, y - lsize * 0.25, lg.namesX - lsize * 0.15, y + lsize * 1.05]
             });
             editItems.push({
-              type: 'risk-name',
+              type: 'bubble-name',
               id: r._id,
               value: r.name,
               rect: [lg.namesX - 4, y - lsize * 0.25, Math.min(pageW - 16, lg.namesX + nameW + 8), y + lsize * 1.05]
@@ -2241,7 +2241,7 @@
         return {
           bytes,
           info: {
-            bubblesRemoved: bubbles.length,
+            bubblesRemoved: sourceBubbles.length,
             plotRect,
             style,
             oldDate: dateSeg ? dateSeg.shows.map(s => s.text).join('').trim() : null,
@@ -2303,7 +2303,7 @@
           removals.push([show.start, show.end]);
         };
 
-        const KEEP = new Set(['graph legend', 'number', 'risk', 'graphlegend', 'graph', 'legend']);
+        const KEEP = new Set(['graph legend', 'number', 'risk', 'risks', 'bubble', 'bubbles', 'graphlegend', 'graph', 'legend']);
         let dateSeg = null;
 
         for (const seg of segments) {
@@ -2619,7 +2619,7 @@
         };
       }
 
-      return { parseRisksFromWorkbook, rankRisks, generate, generateEmptyDataPreview, inspect, analyze, tokenize };
+      return { parseBubblesFromWorkbook, rankBubbles, generate, generateEmptyDataPreview, inspect, analyze, tokenize };
     }));
   </script>
 
@@ -2636,12 +2636,12 @@
       let workbook = null;
       let workbookName = null;
       let lastValidSheetSelection = '';
-      let risks = null;
+      let bubbles = null;
       let lastBytes = null;
       let staticTextEdits = {};
 
       const fonts = { files: [] };
-      let nextRiskId = 1;
+      let nextBubbleId = 1;
 
       document.body.classList.add('start');
 
@@ -2726,7 +2726,7 @@
       }
 
       function hasCoreAssets() {
-        return !!(aiBytes && risks && risks.length);
+        return !!(aiBytes && bubbles && bubbles.length);
       }
 
       function hasWorkspace() {
@@ -2748,10 +2748,10 @@
         if (ready && wasOpen) $('advanced').open = true;
       }
 
-      function ensureRiskIds() {
-        if (!risks) return;
-        risks.forEach(r => {
-          if (r._id == null) r._id = 'risk-' + nextRiskId++;
+      function ensureBubbleIds() {
+        if (!bubbles) return;
+        bubbles.forEach(r => {
+          if (r._id == null) r._id = 'bubble-' + nextBubbleId++;
         });
       }
 
@@ -2873,20 +2873,20 @@
         if (!workbook) return null;
 
         const selectedSheet = $('optSheet').value || null;
-        const parsed = RiskMapCore.parseRisksFromWorkbook(XLSX, workbook, { sheetName: selectedSheet });
-        const parsedRisks = parsed.risks;
+        const parsed = BubbleMapCore.parseBubblesFromWorkbook(XLSX, workbook, { sheetName: selectedSheet });
+        const parsedBubbles = parsed.bubbles;
 
-        risks = parsedRisks;
+        bubbles = parsedBubbles;
         dataParseMessage = '';
         lastValidSheetSelection = $('optSheet').value || '';
-        ensureRiskIds();
+        ensureBubbleIds();
         $('dropXl').classList.add('loaded');
-        $('xlLabel').textContent = `${workbookName} - ${risks.length} risks`;
+        $('xlLabel').textContent = `${workbookName} - ${bubbles.length} bubbles`;
 
-        log(`Spreadsheet "${workbookName}": ${risks.length} risks parsed from ${parsed.sourceType} worksheet "${parsed.sheetName}".`);
-        console.table(risks.map(r => ({
+        log(`Spreadsheet "${workbookName}": ${bubbles.length} bubbles parsed from ${parsed.sourceType} worksheet "${parsed.sheetName}".`);
+        console.table(bubbles.map(r => ({
           num: r.num,
-          risk: r.name,
+          bubble: r.name,
           impact: r.impact,
           likelihood: r.likelihood,
           velocity: r.velocity,
@@ -2902,7 +2902,7 @@
         if (!aiBytes || !window.pdfjsLib) return;
 
         try {
-          const result = await RiskMapCore.generateEmptyDataPreview(aiBytes, {
+          const result = await BubbleMapCore.generateEmptyDataPreview(aiBytes, {
             ...opts(),
             fontFiles: fonts.files,
             fontkit: window.fontkit || null,
@@ -2916,9 +2916,9 @@
       }
 
       function clearParsedData(message) {
-        risks = null;
+        bubbles = null;
         lastBytes = null;
-        dataParseMessage = message || 'No parseable risk data on this worksheet.';
+        dataParseMessage = message || 'No parseable bubble data on this worksheet.';
         $('btnDl').disabled = true;
         renderTable();
         updateLayout();
@@ -2945,7 +2945,7 @@
           await primePreviewBox(aiBytes);
           await new Promise(requestAnimationFrame);
 
-          const info = await RiskMapCore.inspect(aiBytes);
+          const info = await BubbleMapCore.inspect(aiBytes);
 
           if (info.dateText) $('optDate').placeholder = info.dateText;
 
@@ -2977,7 +2977,7 @@
       async function loadSpreadsheetFile(f) {
         const prevWorkbook = workbook;
         const prevWorkbookName = workbookName;
-        const prevRisks = risks;
+        const prevBubbles = bubbles;
         const prevLastBytes = lastBytes;
         const prevSheetSelection = lastValidSheetSelection;
         const prevParseMessage = dataParseMessage;
@@ -2990,7 +2990,7 @@
         } catch (err) {
           workbook = prevWorkbook;
           workbookName = prevWorkbookName;
-          risks = prevRisks;
+          bubbles = prevBubbles;
           lastBytes = prevLastBytes;
           lastValidSheetSelection = prevSheetSelection;
           dataParseMessage = prevParseMessage;
@@ -3000,7 +3000,7 @@
             $('dropXl').classList.add('loaded');
             $('xlLabel').textContent = dataParseMessage
               ? `${workbookName} - no parseable data`
-              : `${workbookName} - ${risks ? risks.length : 0} risks`;
+              : `${workbookName} - ${bubbles ? bubbles.length : 0} bubbles`;
           } else {
             $('dropXl').classList.remove('loaded');
             $('xlLabel').textContent = '.xlsx / .xlsm';
@@ -3024,10 +3024,10 @@
         try {
           parseSelectedWorkbookSheet();
         } catch (err) {
-          clearParsedData(err.message || 'No parseable risk data on this worksheet.');
+          clearParsedData(err.message || 'No parseable bubble data on this worksheet.');
           $('dropXl').classList.add('loaded');
           $('xlLabel').textContent = `${workbookName} - no parseable data`;
-          console.warn('[bubblr] Spreadsheet loaded, but no worksheet contains valid risk data:', err.message);
+          console.warn('[bubblr] Spreadsheet loaded, but no worksheet contains valid bubble data:', err.message);
         }
       }
 
@@ -3109,9 +3109,9 @@
           updateLayout();
           schedule();
         } catch (err) {
-          clearParsedData(err.message || 'No parseable risk data on this worksheet.');
+          clearParsedData(err.message || 'No parseable bubble data on this worksheet.');
           $('xlLabel').textContent = `${workbookName} - no parseable data`;
-          console.warn('[bubblr] Selected worksheet does not contain valid risk data:', err.message);
+          console.warn('[bubblr] Selected worksheet does not contain valid bubble data:', err.message);
         }
       });
 
@@ -3144,7 +3144,7 @@
       ];
 
       function renderTable() {
-        const has = !!(risks && risks.length);
+        const has = !!(bubbles && bubbles.length);
         const showMessage = !!dataParseMessage && !!workbook && !has;
 
         $('dataMsg').style.display = showMessage ? '' : 'none';
@@ -3153,14 +3153,14 @@
         $('addRow').style.display = has ? '' : 'none';
 
         if (!has) {
-          $('riskTable').tBodies[0].innerHTML = '';
+          $('bubbleTable').tBodies[0].innerHTML = '';
           return;
         }
 
-        const tb = $('riskTable').tBodies[0];
+        const tb = $('bubbleTable').tBodies[0];
         tb.innerHTML = '';
 
-        risks.forEach((r, idx) => {
+        bubbles.forEach((r, idx) => {
           const tr = document.createElement('tr');
 
           for (const c of COLS) {
@@ -3177,7 +3177,7 @@
 
             inp.addEventListener('input', () => {
               r[c.k] = c.cls ? (inp.value === '' ? null : parseFloat(inp.value)) : inp.value;
-              RiskMapCore.rankRisks(risks);
+              BubbleMapCore.rankBubbles(bubbles);
               paintTopMarks();
               schedule();
             });
@@ -3193,8 +3193,8 @@
           del.textContent = '✕';
           del.title = 'Remove row';
           del.addEventListener('click', () => {
-            risks.splice(idx, 1);
-            RiskMapCore.rankRisks(risks);
+            bubbles.splice(idx, 1);
+            BubbleMapCore.rankBubbles(bubbles);
             renderTable();
             schedule();
           });
@@ -3208,32 +3208,32 @@
       }
 
       function paintTopMarks() {
-        if (!risks) return;
+        if (!bubbles) return;
 
         const n = Math.max(0, parseInt($('optTopN').value || '10', 10));
 
-        [...$('riskTable').tBodies[0].rows].forEach((tr, i) => {
-          const r = risks[i];
+        [...$('bubbleTable').tBodies[0].rows].forEach((tr, i) => {
+          const r = bubbles[i];
           tr.classList.toggle('top', !!r && (r.rank ?? r.num) <= n);
         });
       }
 
       $('addRow').addEventListener('click', () => {
-        if (!risks) risks = [];
+        if (!bubbles) bubbles = [];
 
-        const maxNum = risks.reduce((m, r) => Math.max(m, r.num || 0), 0);
+        const maxNum = bubbles.reduce((m, r) => Math.max(m, r.num || 0), 0);
 
-        risks.push({
-          _id: 'risk-' + nextRiskId++,
+        bubbles.push({
+          _id: 'bubble-' + nextBubbleId++,
           num: maxNum + 1,
-          name: 'New risk',
+          name: 'New bubble',
           impact: 3,
           likelihood: 3,
           velocity: 3,
           score: null
         });
 
-        RiskMapCore.rankRisks(risks);
+        BubbleMapCore.rankBubbles(bubbles);
         renderTable();
         schedule();
       });
@@ -3255,7 +3255,7 @@
 
       async function generateWithFontFallback(valid, o) {
         try {
-          return await RiskMapCore.generate(aiBytes, valid, {
+          return await BubbleMapCore.generate(aiBytes, valid, {
             ...o,
             fontFiles: fonts.files,
             fontkit: window.fontkit || null,
@@ -3264,7 +3264,7 @@
         } catch (fontErr) {
           if (!fonts.files.length) throw fontErr;
           console.warn('[bubblr] Custom font generation failed; retrying with embedded/source fonts only:', fontErr);
-          return RiskMapCore.generate(aiBytes, valid, {
+          return BubbleMapCore.generate(aiBytes, valid, {
             ...o,
             fontFiles: [],
             fontkit: null,
@@ -3298,8 +3298,8 @@
 
           if (!(o.axisMax > o.axisMin)) throw new Error('Axis max must be greater than axis min.');
 
-          ensureRiskIds();
-          const valid = risks.filter(r => r.name && r.impact != null && r.likelihood != null);
+          ensureBubbleIds();
+          const valid = bubbles.filter(r => r.name && r.impact != null && r.likelihood != null);
 
           const { bytes, info } = await generateWithFontFallback(valid, o);
 
@@ -3452,7 +3452,7 @@
         const sy = c.clientHeight / c.height || 1;
 
         for (const item of items || []) {
-          if (item.type === 'risk-num') continue;
+          if (item.type === 'bubble-num') continue;
           if (!item.rect || item.rect.length !== 4) continue;
 
           const r = vp.convertToViewportRectangle(item.rect);
@@ -3466,7 +3466,7 @@
           const hit = document.createElement('button');
           hit.type = 'button';
           hit.className = 'editHit';
-          hit.title = item.type === 'date' ? 'Edit date label' : (item.type === 'static-text' ? 'Edit text label' : 'Edit risk name');
+          hit.title = item.type === 'date' ? 'Edit date label' : (item.type === 'static-text' ? 'Edit text label' : 'Edit bubble name');
           hit.style.left = left + 'px';
           hit.style.top = top + 'px';
           hit.style.width = width + 'px';
@@ -3486,10 +3486,10 @@
         if (item.type === 'date') return $('optDate').value || item.value || $('optDate').placeholder || '';
         if (item.type === 'static-text') return staticTextEdits[item.key] ?? item.value ?? item.text ?? '';
 
-        const r = risks && risks.find(x => x._id === item.id);
+        const r = bubbles && bubbles.find(x => x._id === item.id);
         if (!r) return item.value || '';
 
-        if (item.type === 'risk-num') return r.num ?? '';
+        if (item.type === 'bubble-num') return r.num ?? '';
         return r.name ?? '';
       }
 
@@ -3508,11 +3508,11 @@
         input.value = currentPreviewValue(item);
         input.style.left = left + 'px';
         input.style.top = top + 'px';
-        input.style.width = Math.max(width, item.type === 'risk-name' || item.type === 'static-text' ? 180 : 80) + 'px';
+        input.style.width = Math.max(width, item.type === 'bubble-name' || item.type === 'static-text' ? 180 : 80) + 'px';
         input.style.minHeight = Math.max(height, 24) + 'px';
         if (item.align) input.style.textAlign = item.align;
 
-        if (item.type === 'risk-num') {
+        if (item.type === 'bubble-num') {
           input.type = 'number';
           input.step = '1';
         }
@@ -3582,10 +3582,10 @@
           return;
         }
 
-        const r = risks && risks.find(x => x._id === item.id);
+        const r = bubbles && bubbles.find(x => x._id === item.id);
         if (!r) return;
 
-        if (item.type === 'risk-num') {
+        if (item.type === 'bubble-num') {
           const n = parseFloat(value);
           if (!isFinite(n)) return;
           r.num = n;
@@ -3595,7 +3595,7 @@
           r.name = name;
         }
 
-        RiskMapCore.rankRisks(risks);
+        BubbleMapCore.rankBubbles(bubbles);
         renderTable();
         schedule();
       }
