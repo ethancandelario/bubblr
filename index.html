@@ -1,0 +1,3224 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>bubblr</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pako/2.1.0/pako.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+  <script src="https://unpkg.com/@pdf-lib/fontkit@1.1.1/dist/fontkit.umd.min.js"
+    onerror="console.warn('[bubblr] fontkit failed to load - custom font embedding disabled')"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+  <style>
+    :root {
+      --maroon: #861F41;
+      --orange: #E5751F;
+      --ink: #2b2228;
+      --muted: #7d6f76;
+      --line: #e6dde1;
+      --ok: #2e7d4f
+    }
+
+    * {
+      box-sizing: border-box
+    }
+
+    html,
+    body {
+      min-height: 100%
+    }
+
+    body {
+      margin: 0;
+      background: #E5E1E6;
+      color: var(--ink);
+      font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif
+    }
+
+    main {
+      width: 100%;
+      margin: 0 auto;
+      padding: 20px 18px 50px;
+      display: flex;
+      flex-direction: column;
+      align-items: center
+    }
+
+    body.start main {
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding-bottom: 20px
+    }
+
+    .startPrompt {
+      width: min(100%, 880px);
+      margin: 0 0 0 20px;
+      max-height: 0;
+      overflow: hidden;
+      color: #9b9fa3;
+      text-align: center;
+      font-size: clamp(2rem, 2.4vw, 3rem);
+      font-weight: 650;
+      letter-spacing: .2px;
+      opacity: 0;
+      transform: translateY(6px);
+      pointer-events: none;
+      user-select: none;
+      transition: opacity .24s ease, transform .24s ease, max-height .24s ease, margin .24s ease
+    }
+
+    body.start .startPrompt {
+      margin-bottom: 1.4em;
+      max-height: 3em;
+      opacity: 0.5;
+      transform: translateY(0);
+    }
+
+    .bar {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr)) auto;
+      gap: 10px;
+      align-items: stretch;
+      width: min(100%, 1100px);
+      min-width: 0
+    }
+
+    .bar>* {
+      min-width: 0
+    }
+
+    body.start .bar {
+      width: min(100%, 880px);
+      grid-template-columns: repeat(3, minmax(0, 1fr))
+    }
+
+    @media(max-width:720px) {
+      body.ready .bar {
+        grid-template-columns: repeat(3, minmax(0, 1fr))
+      }
+
+      body.ready button.dl {
+        grid-column: 1 / -1
+      }
+    }
+
+    @media(max-width:520px) {
+
+      .bar,
+      body.start .bar,
+      body.ready .bar {
+        grid-template-columns: 1fr
+      }
+
+      body.ready button.dl {
+        grid-column: auto
+      }
+
+      .drop {
+        height: auto;
+        min-height: 54px;
+        align-items: stretch;
+        text-align: left
+      }
+    }
+
+    .drop {
+      border: 1.5px dashed #cdbcc4;
+      border-radius: 8px;
+      padding: 10px 14px;
+      cursor: pointer;
+      background: #fff;
+      transition: .15s;
+      min-height: 54px;
+      display: flex;
+      flex-direction: column;
+      justify-content: center
+    }
+
+    .drop:hover,
+    .drop.over,
+    body.file-over .drop {
+      border-color: var(--orange);
+      background: #fff7ef
+    }
+
+    .drop.loaded {
+      border-style: solid;
+      border-color: var(--ok)
+    }
+
+    .drop b {
+      font-size: 12.5px
+    }
+
+    .drop span {
+      font-size: 11.5px;
+      color: var(--muted);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap
+    }
+
+    .drop input {
+      display: none
+    }
+
+    button.dl {
+      background: var(--orange);
+      color: #fff;
+      border: 0;
+      border-radius: 8px;
+      padding: 0 22px;
+      font: 600 14px system-ui;
+      cursor: pointer;
+      min-height: 54px;
+      max-width: 100%
+    }
+
+    button.dl:hover {
+      background: #cf6716
+    }
+
+    button.dl:disabled {
+      background: #d8cdd2;
+      cursor: not-allowed
+    }
+
+    body.start button.dl {
+      display: none !important
+    }
+
+    details {
+      display: none;
+      width: min(100%, 1100px);
+      margin-top: 14px;
+      background: #fff;
+      border: 1px solid var(--line);
+      border-radius: 8px
+    }
+
+    body.ready details {
+      display: block
+    }
+
+    summary {
+      cursor: pointer;
+      padding: 9px 14px;
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--maroon);
+      letter-spacing: .5px;
+      user-select: none
+    }
+
+    .adv {
+      padding: 0 14px 14px;
+      display: none
+    }
+
+    details[open] .adv {
+      display: block
+    }
+
+    .opts {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 14px;
+      margin-bottom: 12px
+    }
+
+    .opt label {
+      display: block;
+      font-size: 10.5px;
+      letter-spacing: .4px;
+      color: var(--muted);
+      margin-bottom: 3px
+    }
+
+    .opt input,
+    .opt select {
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      padding: 6px 8px;
+      font: 13px system-ui;
+      width: 96px;
+      background: #fff
+    }
+
+    .opt input#optDate {
+      width: 150px
+    }
+
+    .opt input#optBubbleMin,
+    .opt input#optBubbleMax {
+      width: 132px
+    }
+
+    .opt select#optFormat {
+      width: 104px
+    }
+
+    .opt select#optSheet {
+      width: 170px
+    }
+
+    .tablewrap {
+      max-height: 300px;
+      overflow: auto;
+      border: 1px solid var(--line);
+      border-radius: 6px
+    }
+
+    .dataMsg {
+      display: none;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      padding: 9px 10px;
+      color: var(--muted);
+      font-size: 12.5px;
+      background: #fff
+    }
+
+    table {
+      border-collapse: collapse;
+      width: 100%;
+      font-size: 12.5px
+    }
+
+    th {
+      font-size: 10px;
+      letter-spacing: .4px;
+      color: var(--muted);
+      position: sticky;
+      top: 0;
+      background: #fff;
+      z-index: 1;
+      padding: 6px 8px;
+      text-align: left;
+      border-bottom: 1px solid var(--line)
+    }
+
+    td {
+      padding: 2px 4px;
+      border-bottom: 1px solid #f1eaed
+    }
+
+    td input {
+      border: 1px solid transparent;
+      border-radius: 4px;
+      padding: 4px 6px;
+      font: 12.5px system-ui;
+      width: 100%;
+      background: transparent
+    }
+
+    td input:hover {
+      border-color: var(--line)
+    }
+
+    td input:focus {
+      border-color: var(--orange);
+      outline: none;
+      background: #fff
+    }
+
+    td input.n {
+      width: 62px;
+      text-align: right
+    }
+
+    td.x {
+      width: 26px;
+      text-align: center
+    }
+
+    td.x button,
+    #addRow {
+      border: 0;
+      background: none;
+      color: #b9a8b0;
+      cursor: pointer;
+      font-size: 14px;
+      padding: 2px 6px;
+      border-radius: 4px
+    }
+
+    td.x button:hover {
+      color: #b3261e;
+      background: #fbeeed
+    }
+
+    #addRow {
+      display: block;
+      margin: 6px 0 0;
+      color: var(--maroon);
+      font-size: 12.5px
+    }
+
+    #addRow:hover {
+      background: #f7eef2
+    }
+
+    tr.top td:first-child {
+      box-shadow: inset 3px 0 0 var(--orange)
+    }
+
+    #pv {
+      width: min(100%, 1100px);
+      margin-top: 0;
+      display: block;
+      position: relative;
+      max-height: 0;
+      opacity: 0;
+      overflow: hidden;
+      pointer-events: none;
+      transform: translateY(6px);
+      transition: max-height .24s ease, opacity .18s ease, transform .18s ease, margin-top .24s ease
+    }
+
+    body.ready #pv {
+      margin-top: 14px;
+      max-height: 1600px;
+      opacity: 1;
+      overflow: visible;
+      pointer-events: auto;
+      transform: translateY(0)
+    }
+
+    #pv canvas {
+      width: 100%;
+      display: block;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fff
+    }
+
+    #pv.loading:not(.primed) canvas {
+      min-height: clamp(240px, 45vw, 520px)
+    }
+
+    #editLayer {
+      position: absolute;
+      left: 0;
+      top: 0;
+      width: 0;
+      height: 0;
+      pointer-events: none;
+      overflow: hidden
+    }
+
+    .editHit {
+      position: absolute;
+      border: 1px solid transparent;
+      border-radius: 4px;
+      background: rgba(255, 255, 255, 0);
+      padding: 0;
+      cursor: text;
+      pointer-events: auto
+    }
+
+    .editHit:hover {
+      border-color: var(--orange);
+      background: rgba(229, 117, 31, .10)
+    }
+
+    .editInput {
+      position: absolute;
+      z-index: 3;
+      border: 1px solid var(--orange);
+      border-radius: 4px;
+      background: #fff;
+      color: var(--ink);
+      font: 13px system-ui;
+      padding: 3px 5px;
+      box-shadow: 0 2px 10px rgba(43, 34, 40, .18);
+      pointer-events: auto
+    }
+
+    #pv.busy::after {
+      content: "";
+      position: absolute;
+      top: 10px;
+      right: 10px;
+      width: 14px;
+      height: 14px;
+      border: 2px solid var(--orange);
+      border-top-color: transparent;
+      border-radius: 50%;
+      animation: sp .7s linear infinite
+    }
+
+    @keyframes sp {
+      to {
+        transform: rotate(360deg)
+      }
+    }
+  </style>
+</head>
+
+<body>
+  <main>
+    <div class="startPrompt">Drop files here to get started.</div>
+    <div class="bar">
+      <div class="drop" id="dropAi" title="Previous heat-map version, saved as .ai with PDF compatibility.">
+        <input type="file" id="fileAi" accept=".ai,.pdf,application/pdf">
+        <b>Illustrator file</b><span id="aiLabel">.ai</span>
+      </div>
+      <div class="drop" id="dropXl"
+        title="Risk Register workbook (.xlsx/.xlsm) containing Risk, Impact, Likelihood and Velocity columns">
+        <input type="file" id="fileXl" accept=".xlsx,.xlsm,.xls,.csv">
+        <b>Spreadsheet</b><span id="xlLabel">.xlsx / .xlsm</span>
+      </div>
+      <div class="drop" id="dropFont"
+        title="Optional .ttf/.otf fonts, used where the file's embedded fonts can't cover new text. Uploaded fonts are matched to the font names used in the Illustrator/PDF file.">
+        <input type="file" id="fileFont" accept=".ttf,.otf" multiple>
+        <b>Fonts</b><span id="fontLabel">.ttf / .otf</span>
+      </div>
+      <button class="dl" id="btnDl" disabled title="Download the updated file in the selected format">Download</button>
+    </div>
+
+    <div id="pv"><canvas id="pvCanvas"></canvas>
+      <div id="editLayer"></div>
+    </div>
+
+    <details id="advanced">
+      <summary>Advanced</summary>
+      <div class="adv">
+        <div class="opts">
+          <div class="opt" title="How many top-ranked risks get the emphasized bubble style"><label for="optTopN">Top
+              N</label>
+            <input type="number" id="optTopN" value="10" min="0" step="1">
+          </div>
+          <div class="opt" title="Value mapped to the left/bottom edge of the plot"><label for="optMin">Axis min</label>
+            <input type="number" id="optMin" value="0" step="0.5">
+          </div>
+          <div class="opt" title="Value mapped to the right/top edge of the plot"><label for="optMax">Axis max</label>
+            <input type="number" id="optMax" value="6" step="0.5">
+          </div>
+          <div class="opt" title="Replaces the date label under the title; blank keeps the existing label"><label
+              for="optDate">Date label</label>
+            <input type="text" id="optDate" value="">
+          </div>
+          <div class="opt"
+            title="Minimum bubble diameter in PDF points; blank keeps the size inferred from the Illustrator file">
+            <label for="optBubbleMin">Min bubble size</label>
+            <input type="number" id="optBubbleMin" min="1" step="0.5" placeholder="Auto">
+          </div>
+          <div class="opt"
+            title="Maximum bubble diameter in PDF points; blank keeps the size inferred from the Illustrator file">
+            <label for="optBubbleMax">Max bubble size</label>
+            <input type="number" id="optBubbleMax" min="1" step="0.5" placeholder="Auto">
+          </div>
+          <div class="opt" title="Format used when Download is pressed"><label for="optFormat">Export format</label>
+            <select id="optFormat">
+              <option value="pdf" selected>PDF</option>
+              <option value="ai">AI</option>
+              <option value="svg">SVG</option>
+            </select>
+          </div>
+          <div class="opt" title="Spreadsheet worksheet to parse; Auto checks Formulas first, then compatible sheets">
+            <label for="optSheet">Worksheet</label>
+            <select id="optSheet" disabled>
+              <option value="">Auto</option>
+            </select>
+          </div>
+        </div>
+        <div class="dataMsg" id="dataMsg">No parseable risk data on this worksheet.</div>
+        <div class="tablewrap" id="tableWrap" style="display:none">
+          <table id="riskTable">
+            <thead>
+              <tr>
+                <th>#</th>
+                <th>Risk</th>
+                <th>Impact</th>
+                <th>Likelihood</th>
+                <th>Velocity</th>
+                <th>Score</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+        <button id="addRow" style="display:none" title="Add a risk row">+ row</button>
+      </div>
+    </details>
+  </main>
+
+  <script>
+    /* ============================================================
+     * Parses an Illustrator (.ai, PDF-compatible) heat-map file,
+     * removes the existing bubbles / bubble numbers / legend rows,
+     * and redraws them from spreadsheet data.
+     * Requires: pdf-lib (PDFLib), pako, SheetJS (XLSX).
+     * ============================================================ */
+    (function (root, factory) {
+      let PDFLibRef, pakoRef;
+      if (typeof PDFLib !== 'undefined') PDFLibRef = PDFLib;
+      if (typeof pako !== 'undefined') pakoRef = pako;
+      if ((!PDFLibRef || !pakoRef) && typeof require === 'function') {
+        try { PDFLibRef = PDFLibRef || require('pdf-lib'); pakoRef = pakoRef || require('pako'); } catch (e) { /* browser */ }
+      }
+      const api = factory(PDFLibRef || (root && root.PDFLib), pakoRef || (root && root.pako));
+      if (typeof module === 'object' && module && module.exports) module.exports = api;
+      if (root) root.RiskMapCore = api;
+    }(typeof self !== 'undefined' ? self : this, function (PDFLib, pako) {
+      'use strict';
+      const { PDFDocument, PDFName, PDFDict, PDFArray, PDFRef, PDFRawStream, PDFString, PDFNumber, StandardFonts, rgb } = PDFLib;
+
+      /* ---------------- spreadsheet parsing ---------------- */
+      function parseRisksFromWorkbook(XLSX, workbook, parseOpts) {
+        parseOpts = parseOpts || {};
+        const num = v => (typeof v === 'number' && isFinite(v)) ? v : (typeof v === 'string' && v.trim() !== '' && isFinite(+v) ? +v : null);
+        const clean = v => (v == null) ? '' : String(v).replace(/\s+/g, ' ').trim();
+        const norm = v => clean(v).toLowerCase();
+
+        function rowsFor(sheetName) {
+          return XLSX.utils.sheet_to_json(workbook.Sheets[sheetName], {
+            header: 1,
+            raw: true,
+            defval: null
+          });
+        }
+
+        function findHeader(row, patterns) {
+          for (let i = 0; i < row.length; i++) {
+            const txt = norm(row[i]);
+            if (!txt) continue;
+            for (const re of patterns) if (re.test(txt)) return i;
+          }
+          return -1;
+        }
+
+        function parseRows(sheetName, rows, headerRowIndex, cols, sourceType) {
+          const risks = [];
+
+          for (let r = headerRowIndex + 1; r < rows.length; r++) {
+            const row = rows[r] || [];
+            const name = clean(row[cols.name]);
+            if (!name || /^#n\/a$/i.test(name)) continue;
+
+            const impact = num(row[cols.impact]);
+            const likelihood = num(row[cols.likelihood]);
+            const velocity = cols.velocity >= 0 ? num(row[cols.velocity]) : 3;
+            if (impact === null || likelihood === null) continue;
+
+            const explicitNum = cols.num >= 0 ? num(row[cols.num]) : null;
+            const score = cols.score >= 0 ? num(row[cols.score]) : null;
+
+            risks.push({
+              num: explicitNum ?? risks.length + 1,
+              name,
+              impact,
+              likelihood,
+              velocity: velocity === null ? 3 : velocity,
+              score,
+            });
+          }
+
+          if (!risks.length) return null;
+
+          rankRisks(risks);
+          risks.sort((a, b) => a.num - b.num);
+
+          return {
+            sheetName,
+            sourceType,
+            headerRow: headerRowIndex + 1,
+            risks,
+          };
+        }
+
+        function tryParseFormulaStyleSheet(sheetName, rows) {
+          for (let r = 0; r < Math.min(rows.length, 30); r++) {
+            const row = rows[r] || [];
+
+            const cols = {
+              num: findHeader(row, [/^#$/, /^number$/]),
+              name: findHeader(row, [/^risk$/]),
+              likelihood: findHeader(row, [/^x\s*axis\s*-\s*likelihood$/, /^likelihood$/]),
+              impact: findHeader(row, [/^y\s*axis\s*-\s*impact$/, /^impact$/]),
+              velocity: findHeader(row, [/^bubble\s*size\s*-\s*velocity$/, /^velocity$/]),
+              score: findHeader(row, [/^risk\s*score$/]),
+            };
+
+            if (cols.name >= 0 && cols.likelihood >= 0 && cols.impact >= 0) {
+              const parsed = parseRows(sheetName, rows, r, cols, 'formulas');
+              if (parsed) return parsed;
+            }
+          }
+          return null;
+        }
+
+        function tryParseRiskRegisterSheet(sheetName, rows) {
+          for (let r = 0; r < Math.min(rows.length, 30); r++) {
+            const row = rows[r] || [];
+
+            const cols = {
+              num: findHeader(row, [/^#$/]),
+              name: findHeader(row, [/^risk$/]),
+              impact: findHeader(row, [/^impact$/]),
+              likelihood: findHeader(row, [/^likelihood$/]),
+              velocity: findHeader(row, [/^velocity/]),
+              score: findHeader(row, [/^risk\s*score$/]),
+            };
+
+            if (cols.name >= 0 && cols.impact >= 0 && cols.likelihood >= 0) {
+              const parsed = parseRows(sheetName, rows, r, cols, 'risk register');
+              if (parsed) return parsed;
+            }
+          }
+          return null;
+        }
+
+        function tryParseAnySupportedSheet(sheetName) {
+          const rows = rowsFor(sheetName);
+          return tryParseFormulaStyleSheet(sheetName, rows) || tryParseRiskRegisterSheet(sheetName, rows);
+        }
+
+        const selectedSheetName = parseOpts.sheetName && workbook.SheetNames.includes(parseOpts.sheetName)
+          ? parseOpts.sheetName
+          : null;
+
+        if (selectedSheetName) {
+          const parsed = tryParseAnySupportedSheet(selectedSheetName);
+          if (parsed) return parsed;
+          throw new Error('Could not find risk data on the selected worksheet "' + selectedSheetName + '".');
+        }
+
+        const formulasSheetName =
+          workbook.SheetNames.find(n => /^formulas$/i.test(n)) ||
+          workbook.SheetNames.find(n => /formula/i.test(n));
+
+        if (formulasSheetName) {
+          const parsed = tryParseFormulaStyleSheet(formulasSheetName, rowsFor(formulasSheetName));
+          if (parsed) return parsed;
+        }
+
+        for (const sheetName of workbook.SheetNames) {
+          if (sheetName === formulasSheetName) continue;
+          const parsed = tryParseFormulaStyleSheet(sheetName, rowsFor(sheetName));
+          if (parsed) return parsed;
+        }
+
+        const registerSheetName =
+          workbook.SheetNames.find(n => /register/i.test(n)) ||
+          workbook.SheetNames[0];
+
+        if (registerSheetName) {
+          const parsed = tryParseRiskRegisterSheet(registerSheetName, rowsFor(registerSheetName));
+          if (parsed) return parsed;
+        }
+
+        throw new Error('Could not find risk data. Expected the Formulas sheet to contain Risk, X Axis - Likelihood, Y axis - Impact, and Bubble Size - Velocity columns.');
+      }
+
+      function rankRisks(risks) {
+        const ranked = risks.slice().sort((a, b) => (b.score ?? -Infinity) - (a.score ?? -Infinity));
+        ranked.forEach((r, i) => { r.rank = (r.score != null) ? i + 1 : r.num; });
+        return risks;
+      }
+
+      /* ---------------- content-stream tokenizer ---------------- */
+      function tokenize(s) {
+        const toks = []; let i = 0; const n = s.length;
+        const isWS = c => c === ' ' || c === '\n' || c === '\r' || c === '\t' || c === '\f' || c === '\x00';
+        const isDelim = c => c === '(' || c === ')' || c === '<' || c === '>' || c === '[' || c === ']' || c === '{' || c === '}' || c === '/' || c === '%';
+        while (i < n) {
+          const c = s[i];
+          if (isWS(c)) { i++; continue; }
+          const start = i;
+          if (c === '%') { while (i < n && s[i] !== '\n' && s[i] !== '\r') i++; continue; }
+          if (c === '(') {
+            let depth = 1; i++;
+            while (i < n && depth > 0) {
+              if (s[i] === '\\') { i += 2; continue; }
+              if (s[i] === '(') depth++; else if (s[i] === ')') depth--;
+              i++;
+            }
+            toks.push({ t: 'str', raw: s.slice(start, i), start, end: i }); continue;
+          }
+          if (c === '<' && s[i + 1] === '<') {
+            let depth = 0; let j = i;
+            while (j < n) {
+              if (s[j] === '<' && s[j + 1] === '<') { depth++; j += 2; continue; }
+              if (s[j] === '>' && s[j + 1] === '>') { depth--; j += 2; if (!depth) break; continue; }
+              j++;
+            }
+            toks.push({ t: 'dict', raw: s.slice(start, j), start, end: j }); i = j; continue;
+          }
+          if (c === '<') { i++; while (i < n && s[i] !== '>') i++; i++; toks.push({ t: 'hex', raw: s.slice(start, i), start, end: i }); continue; }
+          if (c === '[') { toks.push({ t: '[', raw: '[', start, end: i + 1 }); i++; continue; }
+          if (c === ']') { toks.push({ t: ']', raw: ']', start, end: i + 1 }); i++; continue; }
+          if (c === '/') { i++; while (i < n && !isWS(s[i]) && !isDelim(s[i])) i++; toks.push({ t: 'name', raw: s.slice(start, i), start, end: i }); continue; }
+          if (c === '+' || c === '-' || c === '.' || (c >= '0' && c <= '9')) {
+            i++; while (i < n && !isWS(s[i]) && !isDelim(s[i])) i++;
+            const raw = s.slice(start, i);
+            toks.push({ t: 'num', raw, val: parseFloat(raw), start, end: i }); continue;
+          }
+          i++; while (i < n && !isWS(s[i]) && !isDelim(s[i])) i++;
+          toks.push({ t: 'op', raw: s.slice(start, i), start, end: i });
+        }
+        return toks;
+      }
+
+      function toOps(toks) {
+        const ops = []; let args = []; let argStart = -1;
+        for (let i = 0; i < toks.length; i++) {
+          const tk = toks[i];
+          if (tk.t === '[') {
+            const items = []; const aStart = tk.start; let j = i + 1;
+            while (j < toks.length && toks[j].t !== ']') { items.push(toks[j]); j++; }
+            const aEnd = j < toks.length ? toks[j].end : tk.end;
+            args.push({ t: 'array', items, start: aStart, end: aEnd });
+            if (argStart < 0) argStart = aStart;
+            i = j; continue;
+          }
+          if (tk.t === 'op') {
+            ops.push({ op: tk.raw, args, start: argStart >= 0 ? argStart : tk.start, end: tk.end, opStart: tk.start });
+            args = []; argStart = -1;
+          } else {
+            args.push(tk);
+            if (argStart < 0) argStart = tk.start;
+          }
+        }
+        return ops;
+      }
+
+      function decodeLiteral(raw) {
+        let out = '';
+        for (let i = 1; i < raw.length - 1; i++) {
+          let c = raw[i];
+          if (c === '\\') {
+            const d = raw[++i];
+            if (d === 'n') out += '\n'; else if (d === 'r') out += '\r'; else if (d === 't') out += '\t';
+            else if (d === 'b') out += '\b'; else if (d === 'f') out += '\f';
+            else if (d >= '0' && d <= '7') {
+              let oct = d;
+              for (let k = 0; k < 2 && raw[i + 1] >= '0' && raw[i + 1] <= '7'; k++) oct += raw[++i];
+              out += String.fromCharCode(parseInt(oct, 8));
+            } else if (d === '\n' || d === '\r') { /* line continuation */ }
+            else out += d;
+          } else out += c;
+        }
+        return out;
+      }
+
+      function decodeHexStr(raw) {
+        const hx = raw.slice(1, -1).replace(/[^0-9a-fA-F]/g, '');
+        let out = '';
+        for (let i = 0; i < hx.length; i += 2) out += String.fromCharCode(parseInt(hx.substr(i, 2).padEnd(2, '0'), 16));
+        return out;
+      }
+
+      function decodeShownText(arg) {
+        if (!arg) return '';
+        if (arg.t === 'str') return decodeLiteral(arg.raw);
+        if (arg.t === 'hex') return decodeHexStr(arg.raw);
+        if (arg.t === 'array') {
+          let out = '';
+          for (const item of arg.items) {
+            if (item.t === 'str' || item.t === 'hex') {
+              out += item.t === 'str' ? decodeLiteral(item.raw) : decodeHexStr(item.raw);
+            } else if (item.t === 'num' && item.val < -140 && /\S$/.test(out)) {
+              out += ' ';
+            }
+          }
+          return out;
+        }
+        return '';
+      }
+
+      const matMul = (m, n) => [
+        m[0] * n[0] + m[1] * n[2], m[0] * n[1] + m[1] * n[3],
+        m[2] * n[0] + m[3] * n[2], m[2] * n[1] + m[3] * n[3],
+        m[4] * n[0] + m[5] * n[2] + n[4], m[4] * n[1] + m[5] * n[3] + n[5],
+      ];
+      const applyMat = (m, x, y) => [m[0] * x + m[2] * y + m[4], m[1] * x + m[3] * y + m[5]];
+      const IDENT = [1, 0, 0, 1, 0, 0];
+      const cmykToRgb = (c, m, y, k) => [(1 - Math.min(1, c + k)), (1 - Math.min(1, m + k)), (1 - Math.min(1, y + k))];
+
+      /* ---------------- analyze a content stream ---------------- */
+      function analyze(content) {
+        const ops = toOps(tokenize(content));
+        const st = () => ({ ctm: IDENT.slice(), fill: [0, 0, 0], stroke: [0, 0, 0], lw: 1 });
+        const stack = []; let g = st();
+        const circles = [];
+        const clipRects = [];
+        let pendingClip = false;
+        let path = null;
+        let shClipIdx = -1;
+
+        let inText = false, tm = IDENT.slice(), tlm = IDENT.slice(), TL = 0;
+        let fontRes = null, fontSize = 0;
+        const segments = []; let seg = null;
+
+        const effectiveTextMatrix = base => matMul([
+          base[0] * (fontSize || 1), base[1] * (fontSize || 1),
+          base[2] * (fontSize || 1), base[3] * (fontSize || 1),
+          base[4], base[5]
+        ], g.ctm);
+
+        const newSeg = () => {
+          const matrix = effectiveTextMatrix(tlm);
+          seg = { x: matrix[4], y: matrix[5], size: Math.hypot(matrix[0], matrix[1]), matrix, fontRes, fill: g.fill.slice(), shows: [], tdys: [] };
+          segments.push(seg);
+        };
+
+        const beginPath = (startChar) => { path = { xs: [], ys: [], moves: 0, curves: 0, lines: 0, rects: 0, startChar }; };
+        const addPt = (x, y) => { const p = applyMat(g.ctm, x, y); path.xs.push(p[0]); path.ys.push(p[1]); };
+
+        for (let i = 0; i < ops.length; i++) {
+          const o = ops[i]; const a = o.args; const v = j => a[j] && a[j].val;
+          switch (o.op) {
+            case 'q': stack.push(g); g = { ctm: g.ctm.slice(), fill: g.fill.slice(), stroke: g.stroke.slice(), lw: g.lw }; break;
+            case 'Q': g = stack.pop() || st(); break;
+            case 'cm': g.ctm = matMul([v(0), v(1), v(2), v(3), v(4), v(5)], g.ctm); break;
+            case 'w': g.lw = v(0); break;
+            case 'rg': g.fill = [v(0), v(1), v(2)]; break;
+            case 'RG': g.stroke = [v(0), v(1), v(2)]; break;
+            case 'g': g.fill = [v(0), v(0), v(0)]; break;
+            case 'G': g.stroke = [v(0), v(0), v(0)]; break;
+            case 'k': g.fill = cmykToRgb(v(0), v(1), v(2), v(3)); break;
+            case 'K': g.stroke = cmykToRgb(v(0), v(1), v(2), v(3)); break;
+            case 'm': if (!path) beginPath(o.start); path.moves++; addPt(v(0), v(1)); break;
+            case 'l': if (path) { path.lines++; addPt(v(0), v(1)); } break;
+            case 'c': if (path) { path.curves++; addPt(v(0), v(1)); addPt(v(2), v(3)); addPt(v(4), v(5)); } break;
+            case 'v': case 'y': if (path) { path.curves++; addPt(v(0), v(1)); addPt(v(2), v(3)); } break;
+            case 'h': break;
+            case 're': {
+              if (!path) beginPath(o.start);
+              path.rects++;
+              addPt(v(0), v(1)); addPt(v(0) + v(2), v(1) + v(3));
+              break;
+            }
+            case 'W': case 'W*': pendingClip = true; break;
+            case 'n': case 'f': case 'f*': case 'F': case 'S': case 's': case 'B': case 'B*': case 'b': case 'b*': {
+              if (path && path.xs.length) {
+                const x0 = Math.min(...path.xs), x1 = Math.max(...path.xs);
+                const y0 = Math.min(...path.ys), y1 = Math.max(...path.ys);
+                const w = x1 - x0, h = y1 - y0;
+                if (pendingClip && path.rects > 0) clipRects.push({ x: x0, y: y0, w, h, opIdx: i });
+                if (o.op !== 'n' && path.moves === 1 && path.curves >= 3 && path.lines === 0 && w > 2 && h > 2 &&
+                  Math.abs(w - h) / Math.max(w, h) < 0.18) {
+                  circles.push({
+                    cx: (x0 + x1) / 2, cy: (y0 + y1) / 2, r: (w + h) / 4,
+                    paint: o.op, fill: g.fill.slice(), stroke: g.stroke.slice(), lw: g.lw,
+                    range: [path.startChar, o.end],
+                  });
+                }
+              }
+              path = null; pendingClip = false;
+              break;
+            }
+            case 'sh': shClipIdx = clipRects.length - 1; break;
+            case 'BT': inText = true; tm = IDENT.slice(); tlm = IDENT.slice(); TL = 0; seg = null; break;
+            case 'ET': inText = false; seg = null; break;
+            case 'Tf': fontRes = a[0] ? a[0].raw : fontRes; fontSize = v(1) || 1; break;
+            case 'TL': TL = v(0) || 0; break;
+            case 'Tm': tm = [v(0), v(1), v(2), v(3), v(4), v(5)]; tlm = tm.slice(); newSeg(); break;
+            case 'Td': case 'TD': {
+              const tx = v(0) || 0, ty = v(1) || 0;
+              if (o.op === 'TD') TL = -ty;
+              tlm = matMul([1, 0, 0, 1, tx, ty], tlm);
+              if (seg && ty) seg.tdys.push(ty);
+              if (!seg && inText) newSeg();
+              break;
+            }
+            case 'T*': tlm = matMul([1, 0, 0, 1, 0, -TL], tlm); if (seg) seg.tdys.push(-TL); break;
+            case 'Tj': case '\'': case '"': case 'TJ': {
+              if (!seg && inText) newSeg();
+              if (seg) {
+                const strArg = (o.op === '"') ? a[2] : a[0];
+                const matrix = effectiveTextMatrix(tlm);
+                seg.shows.push({ text: decodeShownText(strArg), start: o.start, end: o.end, x: matrix[4], y: matrix[5], matrix, fontRes });
+              }
+              break;
+            }
+            default: break;
+          }
+        }
+
+        const plotRect = shClipIdx >= 0 ? clipRects[shClipIdx] : null;
+        return { ops, circles, clipRects, plotRect, segments };
+      }
+
+      /* ---------------- glyph coverage / encoding for original fonts ---------------- */
+      const GLYPH_NAMES = (() => {
+        const m = {
+          ' ': 'space', '!': 'exclam', '"': 'quotedbl', '#': 'numbersign', '$': 'dollar', '%': 'percent',
+          '&': 'ampersand', "'": 'quotesingle', '(': 'parenleft', ')': 'parenright', '*': 'asterisk',
+          '+': 'plus', ',': 'comma', '-': 'hyphen', '.': 'period', '/': 'slash', ':': 'colon',
+          ';': 'semicolon', '<': 'less', '=': 'equal', '>': 'greater', '?': 'question', '@': 'at',
+          '[': 'bracketleft', ']': 'bracketright', '_': 'underscore',
+          '\u2019': 'quoteright', '\u2018': 'quoteleft', '\u201C': 'quotedblleft', '\u201D': 'quotedblright',
+          '\u2013': 'endash', '\u2014': 'emdash',
+        };
+        const dig = ['zero', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine'];
+        for (let i = 0; i <= 9; i++) m[String(i)] = dig[i];
+        for (let i = 0; i < 26; i++) { m[String.fromCharCode(65 + i)] = String.fromCharCode(65 + i); m[String.fromCharCode(97 + i)] = String.fromCharCode(97 + i); }
+        return m;
+      })();
+
+      const WINANSI_EXTRA = { '\u2019': 0x92, '\u2018': 0x91, '\u201C': 0x93, '\u201D': 0x94, '\u2013': 0x96, '\u2014': 0x97, '\u2022': 0x95 };
+
+      function pdfNameText(obj) {
+        if (!obj) return '';
+        try {
+          if (obj.decodeText) return obj.decodeText();
+          if (obj.asString) return obj.asString();
+        } catch (e) { /* fall through */ }
+        return String(obj).replace(/^\//, '');
+      }
+
+      function cleanPdfFontName(name) {
+        return String(name || '')
+          .replace(/^\//, '')
+          .replace(/^[A-Z]{6}\+/, '')
+          .trim();
+      }
+
+      function fontExactKey(name) {
+        return cleanPdfFontName(name)
+          .replace(/\.(ttf|otf)$/i, '')
+          .toLowerCase()
+          .replace(/[^a-z0-9]+/g, '');
+      }
+
+      function fontFamilyKey(name) {
+        return cleanPdfFontName(name)
+          .replace(/\.(ttf|otf)$/i, '')
+          .replace(/[_-]+/g, ' ')
+          .replace(/\b(regular|roman|book|medium|bold|semi\s*bold|semibold|demi\s*bold|demibold|extra\s*bold|extrabold|heavy|black|thin|light|extra\s*light|extralight|ultra\s*light|ultralight|italic|oblique|mt|ps)\b/gi, ' ')
+          .toLowerCase()
+          .replace(/[^a-z0-9]+/g, '');
+      }
+
+      function fontStyleInfo(name) {
+        const n = String(name || '').toLowerCase();
+        let weight = 400;
+        if (/thin/.test(n)) weight = 100;
+        else if (/ultra\s*light|ultralight|extra\s*light|extralight/.test(n)) weight = 200;
+        else if (/light/.test(n)) weight = 300;
+        else if (/semi\s*bold|semibold|demi\s*bold|demibold/.test(n)) weight = 600;
+        else if (/extra\s*bold|extrabold|heavy|black/.test(n)) weight = 800;
+        else if (/bold/.test(n)) weight = 700;
+        else if (/medium/.test(n)) weight = 500;
+        return { weight, italic: /italic|oblique/.test(n), bold: weight >= 600 };
+      }
+
+      function scoreUploadedFontMatch(file, targetNames) {
+        const candNames = [
+          file.name,
+          file.meta && file.meta.postscriptName,
+          file.meta && file.meta.fullName,
+          file.meta && file.meta.familyName,
+          file.meta && file.meta.subfamilyName ? ((file.meta.familyName || '') + ' ' + file.meta.subfamilyName) : '',
+        ].filter(Boolean);
+
+        let best = -Infinity;
+
+        targetNames.filter(Boolean).forEach(target => {
+          const targetExact = fontExactKey(target);
+          const targetFamily = fontFamilyKey(target);
+          const targetStyle = fontStyleInfo(target);
+
+          candNames.forEach(candidate => {
+            const candExact = fontExactKey(candidate);
+            const candFamily = fontFamilyKey(candidate);
+            const candStyle = fontStyleInfo(candidate);
+            let score = 0;
+
+            if (targetExact && candExact && targetExact === candExact) score += 1000;
+            else if (targetExact && candExact && (targetExact.includes(candExact) || candExact.includes(targetExact))) score += 520;
+
+            if (targetFamily && candFamily) {
+              if (targetFamily === candFamily) score += 360;
+              else if (targetFamily.includes(candFamily) || candFamily.includes(targetFamily)) score += 180;
+            }
+
+            score += Math.max(-120, 120 - Math.abs(targetStyle.weight - candStyle.weight) * 0.6);
+            if (targetStyle.bold !== candStyle.bold) score -= 120;
+            if (targetStyle.italic !== candStyle.italic) score -= 180;
+
+            best = Math.max(best, score);
+          });
+        });
+
+        return best;
+      }
+
+      function makeOriginalFontAdapter(ctx, fontDict, resName) {
+        try {
+          const lk = o => (o instanceof PDFRef) ? ctx.lookup(o) : o;
+          const d = lk(fontDict);
+          let baseFontName = cleanPdfFontName(pdfNameText(d.get(PDFName.of('BaseFont'))));
+          const descendants = lk(d.get(PDFName.of('DescendantFonts')));
+          const descendant = descendants && descendants.asArray ? lk(descendants.asArray()[0]) : null;
+          const firstChar = d.get(PDFName.of('FirstChar'));
+          const widthsObj = lk(d.get(PDFName.of('Widths')));
+          let desc = lk(d.get(PDFName.of('FontDescriptor')));
+
+          if (descendant) {
+            baseFontName = baseFontName || cleanPdfFontName(pdfNameText(descendant.get(PDFName.of('BaseFont'))));
+            desc = desc || lk(descendant.get(PDFName.of('FontDescriptor')));
+          }
+
+          const descriptorFontName = desc ? cleanPdfFontName(pdfNameText(desc.get(PDFName.of('FontName')))) : '';
+          const displayName = baseFontName || descriptorFontName || resName;
+          let charset = null;
+
+          if (desc) {
+            const cs = desc.get(PDFName.of('CharSet'));
+            if (cs && cs.decodeText) charset = new Set(cs.decodeText().split('/').filter(Boolean));
+            else if (cs && cs.value) charset = new Set(String(cs.value).split('/').filter(Boolean));
+          }
+
+          const fc = firstChar ? firstChar.asNumber() : 0;
+          const widths = [];
+          if (widthsObj && widthsObj.asArray) widthsObj.asArray().forEach((w, i) => { widths[fc + i] = lk(w).asNumber(); });
+
+          const codeFor = ch => {
+            const cc = ch.charCodeAt(0);
+            if (cc < 128) return cc;
+            if (WINANSI_EXTRA[ch] != null) return WINANSI_EXTRA[ch];
+            return null;
+          };
+
+          const covers = ch => {
+            const gname = GLYPH_NAMES[ch];
+            if (charset) return !!(gname && charset.has(gname));
+            const code = codeFor(ch);
+            return code != null && widths[code] > 0;
+          };
+
+          return {
+            kind: 'original',
+            res: resName,
+            label: displayName,
+            fontName: displayName,
+            targetNames: [baseFontName, descriptorFontName, resName].filter(Boolean),
+            canRender: txt => [...String(txt ?? '')].every(covers),
+            widthOf: (txt, size) => [...String(txt ?? '')].reduce((s, ch) => s + ((widths[codeFor(ch)] || 520) / 1000) * size, 0),
+            encode: txt => '(' + [...String(txt ?? '')].map(ch => {
+              const code = codeFor(ch);
+              const c = String.fromCharCode(code == null ? 63 : code);
+              return (c === '(' || c === ')' || c === '\\') ? '\\' + c : (code > 126 || code < 32) ? '\\' + code.toString(8).padStart(3, '0') : c;
+            }).join('') + ')',
+          };
+        } catch (e) {
+          return null;
+        }
+      }
+
+      function makePdfLibFontAdapter(font, resName, label, kind) {
+        return {
+          kind: kind || 'embedded',
+          res: resName,
+          label: label || resName,
+          font,
+          canRender: txt => {
+            try {
+              txt = String(txt ?? '');
+              font.encodeText(txt);
+              font.widthOfTextAtSize(txt, 12);
+              return true;
+            } catch (e) {
+              return false;
+            }
+          },
+          widthOf: (txt, size) => {
+            try {
+              return font.widthOfTextAtSize(String(txt ?? ''), size);
+            } catch (e) {
+              return String(txt ?? '').length * size * 0.55;
+            }
+          },
+          encode: txt => font.encodeText(String(txt ?? '')).toString(),
+        };
+      }
+
+      const fmt = n => {
+        const r = Math.round(n * 1000) / 1000;
+        return Object.is(r, -0) ? '0' : String(r);
+      };
+
+      const K = 0.5522847498;
+
+      function circlePath(cx, cy, r) {
+        const k = K * r;
+        return [
+          `${fmt(cx + r)} ${fmt(cy)} m`,
+          `${fmt(cx + r)} ${fmt(cy + k)} ${fmt(cx + k)} ${fmt(cy + r)} ${fmt(cx)} ${fmt(cy + r)} c`,
+          `${fmt(cx - k)} ${fmt(cy + r)} ${fmt(cx - r)} ${fmt(cy + k)} ${fmt(cx - r)} ${fmt(cy)} c`,
+          `${fmt(cx - r)} ${fmt(cy - k)} ${fmt(cx - k)} ${fmt(cy - r)} ${fmt(cx)} ${fmt(cy - r)} c`,
+          `${fmt(cx + k)} ${fmt(cy - r)} ${fmt(cx + r)} ${fmt(cy - k)} ${fmt(cx + r)} ${fmt(cy)} c`,
+          'h',
+        ].join('\n');
+      }
+
+
+      function cleanEditableText(text) {
+        return String(text || '').replace(/\s+/g, ' ').trim();
+      }
+
+      function textMatrixToTm(matrix) {
+        return `${fmt(matrix[0])} ${fmt(matrix[1])} ${fmt(matrix[2])} ${fmt(matrix[3])} ${fmt(matrix[4])} ${fmt(matrix[5])} Tm`;
+      }
+
+      function textBoundsFor(font, text, matrix) {
+        const width = Math.max(1, font.widthOf(cleanEditableText(text) || 'M', 1));
+        const pts = [
+          applyMat(matrix, 0, -0.25),
+          applyMat(matrix, width, -0.25),
+          applyMat(matrix, 0, 1.05),
+          applyMat(matrix, width, 1.05),
+        ];
+        return [
+          Math.min(...pts.map(p => p[0])),
+          Math.min(...pts.map(p => p[1])),
+          Math.max(...pts.map(p => p[0])),
+          Math.max(...pts.map(p => p[1])),
+        ];
+      }
+
+
+      function showMatrix(show, seg) {
+        return (show && show.matrix) || (seg && seg.matrix) || [seg && seg.size || 12, 0, 0, seg && seg.size || 12, seg && seg.x || 0, seg && seg.y || 0];
+      }
+
+      function showFontSize(show, seg) {
+        const m = showMatrix(show, seg);
+        return Math.max(1, Math.hypot(m[0], m[1]));
+      }
+
+      function showAdvanceEstimate(show, seg) {
+        const text = String(show && show.text || '');
+        const size = showFontSize(show, seg);
+        const visible = cleanEditableText(text);
+        if (!visible) return size * 0.35;
+        return Math.max(size * 0.3, visible.length * size * 0.52);
+      }
+
+      function shouldStartNewEditableTextGroup(seg, group, show) {
+        if (!group.length || !/\S/.test(String(show && show.text || ''))) return false;
+
+        const prev = group[group.length - 1];
+        if (!/\S/.test(String(prev && prev.text || ''))) return false;
+
+        const pm = showMatrix(prev, seg);
+        const sm = showMatrix(show, seg);
+        const size = showFontSize(prev, seg);
+        const ux = pm[0] / size;
+        const uy = pm[1] / size;
+        const dx = sm[4] - pm[4];
+        const dy = sm[5] - pm[5];
+        const along = dx * ux + dy * uy;
+        const cross = Math.abs(dx * -uy + dy * ux);
+        const expected = showAdvanceEstimate(prev, seg);
+
+        return cross > size * 0.9 || along < -size * 0.65 || along > expected + size * 3.0;
+      }
+
+      function splitEditableTextShows(seg, shows) {
+        const groups = [];
+        let group = [];
+
+        for (const show of shows || []) {
+          if (shouldStartNewEditableTextGroup(seg, group, show)) {
+            if (cleanEditableText(group.map(s => s.text).join(''))) groups.push(group);
+            group = [];
+          }
+          group.push(show);
+        }
+
+        if (cleanEditableText(group.map(s => s.text).join(''))) groups.push(group);
+        return groups;
+      }
+
+      const nearest = (color, candidates) => {
+        let best = 0, bd = Infinity;
+        candidates.forEach((c, i) => {
+          const d = (c[0] - color[0]) ** 2 + (c[1] - color[1]) ** 2 + (c[2] - color[2]) ** 2;
+          if (d < bd) { bd = d; best = i; }
+        });
+        return best;
+      };
+
+      const DEFAULTS = {
+        topFill: [0.525, 0.122, 0.255], topStroke: [0.898, 0.459, 0.122],
+        stdFill: [0.459, 0.471, 0.482], stdStroke: [0.843, 0.824, 0.796],
+        numColor: [0.889, 0.889, 0.889], legendColor: [0.525, 0.122, 0.255],
+        strokeW: 4, numSize: 18,
+        radii: { 1: 17.302, 3: 29.975, 5: 38.693 },
+        legend: { size: 21.8046, lineFactor: 1.48 },
+      };
+
+      function cloneRadii(r) {
+        return { 1: r[1], 3: r[3], 5: r[5] };
+      }
+
+      function inferRadiiFromBubbles(bubbles) {
+        const rs = [...new Set((bubbles || []).map(b => Math.round(b.r * 2) / 2))]
+          .filter(r => isFinite(r) && r > 0)
+          .sort((a, b) => a - b);
+
+        if (rs.length >= 3) return { 1: rs[0], 3: rs[Math.floor(rs.length / 2)], 5: rs[rs.length - 1] };
+        if (rs.length === 2) return { 1: rs[0], 3: (rs[0] + rs[1]) / 2, 5: rs[1] };
+        if (rs.length === 1) return { 1: rs[0] * 0.58, 3: rs[0], 5: rs[0] * 1.29 };
+
+        return cloneRadii(DEFAULTS.radii);
+      }
+
+      function applyBubbleSizeOverride(style, opts, sourceRadii) {
+        const minD = parseFloat(opts.bubbleMinDiameter);
+        const maxD = parseFloat(opts.bubbleMaxDiameter);
+
+        if (!isFinite(minD) && !isFinite(maxD)) return;
+
+        const minR = isFinite(minD) && minD > 0 ? minD / 2 : sourceRadii[1];
+        const maxR = isFinite(maxD) && maxD > 0 ? maxD / 2 : sourceRadii[5];
+
+        if (!(maxR > minR)) return;
+
+        const midRatio = sourceRadii[5] > sourceRadii[1]
+          ? Math.max(0, Math.min(1, (sourceRadii[3] - sourceRadii[1]) / (sourceRadii[5] - sourceRadii[1])))
+          : 0.5;
+
+        style.radii = {
+          1: minR,
+          3: minR + midRatio * (maxR - minR),
+          5: maxR,
+        };
+      }
+
+      /* ---------------- main generation ---------------- */
+      async function generate(pdfBytes, risks, opts) {
+        opts = Object.assign({ topN: 10, axisMin: 0, axisMax: 6, dateText: null, bubbleMinDiameter: null, bubbleMaxDiameter: null, staticTextEdits: null, fontFiles: null, fontkit: null, log: () => { } }, opts || {});
+        const log = opts.log;
+
+        risks = risks
+          .filter(r => r && r.name && isFinite(r.impact) && isFinite(r.likelihood))
+          .map(r => ({ ...r, velocity: isFinite(r.velocity) ? r.velocity : 3, num: isFinite(r.num) ? r.num : 0 }));
+
+        if (!risks.length) throw new Error('No risks with numeric Impact & Likelihood to draw.');
+
+        const pdfDoc = await PDFDocument.load(pdfBytes, { ignoreEncryption: true, updateMetadata: false });
+        const ctx = pdfDoc.context;
+        const page = pdfDoc.getPage(0);
+        const pageW = page.getWidth();
+
+        const contentsRef = page.node.get(PDFName.of('Contents'));
+        const streamRefs = [];
+        const lkp = o => (o instanceof PDFRef) ? ctx.lookup(o) : o;
+
+        if (contentsRef instanceof PDFRef) streamRefs.push(contentsRef);
+        else if (lkp(contentsRef) instanceof PDFArray) lkp(contentsRef).asArray().forEach(r => streamRefs.push(r));
+
+        let content = '';
+
+        const bytesToLatin1 = (bytes) => {
+          let s = '';
+          for (let i = 0; i < bytes.length; i += 60000) s += String.fromCharCode.apply(null, bytes.subarray(i, i + 60000));
+          return s;
+        };
+
+        for (const ref of streamRefs) {
+          const stm = lkp(ref);
+          const raw = stm.contents || stm.getContents?.();
+          const filter = stm.dict.get(PDFName.of('Filter'));
+          let bytes;
+          const fname = filter && filter.asString ? filter.asString() : (filter ? String(filter) : '');
+          if (/Flate/.test(fname)) bytes = pako.inflate(raw);
+          else if (!filter) bytes = raw;
+          else throw new Error('Unsupported content stream filter: ' + fname);
+          content += bytesToLatin1(bytes) + '\n';
+        }
+
+        const { circles, plotRect, segments } = analyze(content);
+        if (!plotRect) throw new Error('Could not locate the plot area (gradient clip rectangle) in the Illustrator file. Is this the right heat-map file?');
+        log(`Plot area: x=${plotRect.x.toFixed(1)} y=${plotRect.y.toFixed(1)} w=${plotRect.w.toFixed(1)} h=${plotRect.h.toFixed(1)}`);
+
+        const inPlot = (x, y) => x > plotRect.x - 2 && x < plotRect.x + plotRect.w + 2 && y > plotRect.y - 2 && y < plotRect.y + plotRect.h + 2;
+        const bubbles = circles.filter(c => inPlot(c.cx, c.cy) && c.range);
+        log(`Found ${bubbles.length} bubble paint operations (${new Set(bubbles.map(b => b.cx.toFixed(1) + ',' + b.cy.toFixed(1))).size} distinct bubbles) to remove.`);
+
+        const style = JSON.parse(JSON.stringify(DEFAULTS));
+        const fills = bubbles.filter(b => /^f/i.test(b.paint) || /^b/i.test(b.paint));
+        const strokes = bubbles.filter(b => b.paint === 'S' || b.paint === 's' || /^b/i.test(b.paint));
+
+        if (fills.length) {
+          const topIdx = [], stdIdx = [];
+          fills.forEach(b => (nearest(b.fill, [DEFAULTS.topFill, DEFAULTS.stdFill]) === 0 ? topIdx : stdIdx).push(b));
+          if (topIdx.length) style.topFill = topIdx[0].fill;
+          if (stdIdx.length) style.stdFill = stdIdx[0].fill;
+        }
+
+        if (strokes.length) {
+          const t = [], s2 = [];
+          strokes.forEach(b => (nearest(b.stroke, [DEFAULTS.topStroke, DEFAULTS.stdStroke]) === 0 ? t : s2).push(b));
+          if (t.length) style.topStroke = t[0].stroke;
+          if (s2.length) style.stdStroke = s2[0].stroke;
+          style.strokeW = strokes[0].lw || 4;
+        }
+
+        style.radii = inferRadiiFromBubbles(fills);
+        const sourceRadii = cloneRadii(style.radii);
+        applyBubbleSizeOverride(style, opts, sourceRadii);
+
+        log(`Velocity radii: 1→${style.radii[1].toFixed(1)}  3→${style.radii[3].toFixed(1)}  5→${style.radii[5].toFixed(1)}; stroke ${style.strokeW}pt`);
+
+        const removals = bubbles.map(b => b.range);
+        const textRemovalStarts = new Set();
+        const removeShow = show => {
+          if (!show) return;
+          textRemovalStarts.add(show.start);
+          removals.push([show.start, show.end]);
+        };
+        const KEEP = new Set(['graph legend', 'number', 'risk', 'graphlegend', 'graph', 'legend']);
+        let numSeg = null, legendNamesSeg = null, dateSeg = null;
+        const legendDigitShows = [];
+
+        for (const seg of segments) {
+          if (!seg.shows.length) continue;
+
+          const joined = seg.shows.map(s => s.text).join('');
+          const allDigits = seg.shows.every(s => /^\d+$/.test(s.text.trim()) || s.text.trim() === '');
+
+          if (inPlot(seg.x, seg.y) && allDigits) {
+            if (!numSeg || seg.shows.length > numSeg.shows.length) numSeg = seg;
+            seg.shows.forEach(removeShow);
+            continue;
+          }
+
+          if (seg.x > plotRect.x + plotRect.w - 5) {
+            const letterShows = seg.shows.filter(s => /[A-Za-z]/.test(s.text));
+            const isHeaderSeg = letterShows.length > 0 && letterShows.every(s => KEEP.has(s.text.trim().toLowerCase().replace(/\s+/g, ' ')))
+              && seg.shows.length <= 4;
+
+            if (isHeaderSeg) continue;
+
+            seg.shows.forEach(s => {
+              if (KEEP.has(s.text.trim().toLowerCase())) return;
+              if (/^\d+$/.test(s.text.trim())) legendDigitShows.push(s);
+              removeShow(s);
+            });
+
+            if (letterShows.length >= 2 && (!legendNamesSeg || letterShows.length > legendNamesSeg.shows.filter(s => /[A-Za-z]/.test(s.text)).length)) {
+              legendNamesSeg = seg;
+            }
+
+            continue;
+          }
+
+          if (seg.y > plotRect.y + plotRect.h && /^(January|February|March|April|May|June|July|August|September|October|November|December)\s*\d{4}$/i.test(joined.trim())) {
+            dateSeg = seg;
+          }
+        }
+
+        if (opts.dateText && dateSeg) dateSeg.shows.forEach(removeShow);
+        const staticTextEdits = opts.staticTextEdits && typeof opts.staticTextEdits === 'object' ? opts.staticTextEdits : {};
+        const staticTextCandidates = [];
+
+        function staticTextKey(seg, shows, text) {
+          const first = shows[0];
+          return ['text', first ? first.start : 0, Math.round(seg.x * 10), Math.round(seg.y * 10), cleanEditableText(text).toLowerCase().replace(/[^a-z0-9]+/g, '-')].join(':');
+        }
+
+        for (const seg of segments) {
+          if (!seg || seg === dateSeg || !seg.shows || !seg.shows.length) continue;
+
+          const keptShows = seg.shows.filter(show => !textRemovalStarts.has(show.start));
+          if (!keptShows.length) continue;
+
+          for (const showGroup of splitEditableTextShows(seg, keptShows)) {
+            const text = cleanEditableText(showGroup.map(show => show.text).join(''));
+            if (!/[A-Za-z]/.test(text)) continue;
+
+            const key = staticTextKey(seg, showGroup, text);
+            const value = Object.prototype.hasOwnProperty.call(staticTextEdits, key)
+              ? cleanEditableText(staticTextEdits[key])
+              : text;
+
+            const item = {
+              key,
+              text,
+              value,
+              isEdited: value !== text,
+              shows: showGroup,
+              fontRes: showGroup[0].fontRes || seg.fontRes,
+              fill: seg.fill.slice(),
+              matrix: showMatrix(showGroup[0], seg).slice(),
+            };
+
+            if (item.isEdited) showGroup.forEach(removeShow);
+            staticTextCandidates.push(item);
+          }
+        }
+
+        log(`Removing ${removals.length} drawing ranges (bubbles, bubble numbers, legend rows${opts.dateText && dateSeg ? ', date text' : ''}${staticTextCandidates.some(t => t.isEdited) ? ', edited static text' : ''}).`);
+
+        removals.sort((a, b) => b[0] - a[0]);
+        let newContent = content;
+        let lastStart = Infinity;
+
+        for (const [s, e] of removals) {
+          if (e > lastStart) continue;
+          newContent = newContent.slice(0, s) + ' ' + newContent.slice(e);
+          lastStart = s;
+        }
+
+        /* --- fonts for new content --- */
+        const uploadedFiles = Array.isArray(opts.fontFiles) ? opts.fontFiles : [];
+        const wantsCustom = !!(opts.fontkit && uploadedFiles.length);
+        if (wantsCustom) pdfDoc.registerFontkit(opts.fontkit);
+
+        const resDict = lkp(page.node.get(PDFName.of('Resources')));
+        let fontDict = lkp(resDict.get(PDFName.of('Font')));
+        if (!fontDict) { fontDict = ctx.obj({}); resDict.set(PDFName.of('Font'), fontDict); }
+
+        const freshName = base => {
+          let i = 0;
+          while (fontDict.get(PDFName.of(base + i))) i++;
+          return base + i;
+        };
+
+        const helv = await pdfDoc.embedFont(StandardFonts.Helvetica);
+        const helvBold = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
+        const helvRes = '/' + freshName('FRM');
+        const helvBoldRes = '/' + freshName('FRMB');
+
+        fontDict.set(PDFName.of(helvRes.slice(1)), helv.ref);
+        fontDict.set(PDFName.of(helvBoldRes.slice(1)), helvBold.ref);
+
+        const fbReg = makePdfLibFontAdapter(helv, helvRes, 'Helvetica');
+        const fbBold = makePdfLibFontAdapter(helvBold, helvBoldRes, 'Helvetica-Bold');
+
+        const origAdapter = res => {
+          if (!res) return null;
+          const fd = fontDict.get(PDFName.of(res.replace(/^\//, '')));
+          return fd ? makeOriginalFontAdapter(ctx, fd, res) : null;
+        };
+
+        const digitsNeeded = risks.map(r => String(r.num)).join('');
+
+        const modalFont = (seg, filter) => {
+          if (!seg) return null;
+          const counts = {};
+          seg.shows.filter(filter || (() => true)).forEach(s => { if (s.fontRes) counts[s.fontRes] = (counts[s.fontRes] || 0) + 1; });
+          let best = null, bn = 0;
+          for (const k in counts) if (counts[k] > bn) { bn = counts[k]; best = k; }
+          return best;
+        };
+
+        const uploadedFontCache = new Map();
+
+        async function embedMatchedUploadedFont(file, label) {
+          const key = file.name + ':' + (file.bytes && file.bytes.length || 0);
+          if (uploadedFontCache.has(key)) return uploadedFontCache.get(key);
+
+          try {
+            const font = await pdfDoc.embedFont(file.bytes, { subset: false });
+            const res = '/' + freshName('FUP');
+            fontDict.set(PDFName.of(res.slice(1)), font.ref);
+            const adapter = makePdfLibFontAdapter(font, res, file.meta && file.meta.fullName || file.name, 'uploaded');
+            uploadedFontCache.set(key, adapter);
+            log(`${label} font: matched uploaded font "${file.name}" to source font.`);
+            return adapter;
+          } catch (e) {
+            log(`${label} font: uploaded font "${file.name}" failed (${e.message}); trying another fallback.`);
+            uploadedFontCache.set(key, null);
+            return null;
+          }
+        }
+
+        async function matchedUploadedFont(original, text, label) {
+          if (!wantsCustom || !original) return null;
+
+          const targetNames = original.targetNames && original.targetNames.length ? original.targetNames : [original.fontName, original.res];
+          const ranked = uploadedFiles
+            .map(file => ({ file, score: scoreUploadedFontMatch(file, targetNames) }))
+            .filter(x => x.score >= 260)
+            .sort((a, b) => b.score - a.score);
+
+          for (const item of ranked) {
+            const adapter = await embedMatchedUploadedFont(item.file, label);
+            if (adapter && adapter.canRender(text)) return adapter;
+          }
+
+          if (ranked.length) log(`${label} font: no matched uploaded font could render all required characters.`);
+          return null;
+        }
+
+        async function fontForResource(res, text, fallback, label) {
+          const original = origAdapter(res);
+          if (original && original.canRender(text)) return original;
+
+          const matched = await matchedUploadedFont(original, text, label);
+          if (matched) return matched;
+
+          return fallback;
+        }
+
+        const namesText = risks.map(r => r.name).join('');
+        const numFont = await fontForResource(modalFont(numSeg), digitsNeeded, fbBold, 'Bubble-number');
+        const legendFont = await fontForResource(modalFont(legendNamesSeg, s2 => /[A-Za-z]/.test(s2.text)), namesText + digitsNeeded, fbReg, 'Legend');
+
+        const fontLabel = f => {
+          if (!f) return 'none';
+          if (f.kind === 'original') return 'reusing embedded ' + f.res + ' (' + f.label + ')';
+          if (f.kind === 'uploaded') return 'matched uploaded ' + f.label;
+          return f.label + ' fallback';
+        };
+
+        log(`Bubble-number font: ${fontLabel(numFont)}; legend font: ${fontLabel(legendFont)}`);
+
+        const span = opts.axisMax - opts.axisMin;
+        const X = lk => plotRect.x + ((lk - opts.axisMin) / span) * plotRect.w;
+        const Y = im => plotRect.y + ((im - opts.axisMin) / span) * plotRect.h;
+
+        const radiusFor = v => {
+          const r = style.radii;
+          if (v <= 1) return r[1];
+          if (v >= 5) return r[5];
+          if (v === 3) return r[3];
+          return v < 3 ? r[1] + (v - 1) / 2 * (r[3] - r[1]) : r[3] + (v - 3) / 2 * (r[5] - r[3]);
+        };
+
+        const numColor = (numSeg && numSeg.fill) || style.numColor;
+        const numSize0 = (numSeg && numSeg.size) || style.numSize;
+
+        const editItems = [];
+        const staticOut = [];
+        const bubbleOut = [];
+        const legendOut = [];
+        const dateOut = [];
+
+        for (const item of staticTextCandidates) {
+          const drawText = item.value;
+          const hitText = drawText || item.text || 'Text';
+          const font = await fontForResource(item.fontRes, hitText, fbReg, 'Editable text');
+          const rect = textBoundsFor(font, hitText, item.matrix);
+
+          editItems.push({
+            type: 'static-text',
+            key: item.key,
+            value: item.text,
+            text: item.text,
+            rect,
+          });
+
+          if (item.isEdited) {
+            if (!drawText) continue;
+            staticOut.push('BT');
+            staticOut.push(`${fmt(item.fill[0])} ${fmt(item.fill[1])} ${fmt(item.fill[2])} rg`);
+            staticOut.push(`${font.res} 1 Tf`);
+            staticOut.push(textMatrixToTm(item.matrix));
+            staticOut.push(`${font.encode(drawText)} Tj`);
+            staticOut.push('ET');
+          }
+        }
+
+        const circleOverlaps = (a, b) => Math.hypot(a.cx - b.cx, a.cy - b.cy) < (a.rad + b.rad);
+        const rectForLabel = (item, width, size, dx, dy) => ({
+          x0: item.cx + dx - width / 2,
+          x1: item.cx + dx + width / 2,
+          y0: item.cy + dy - size * 0.46,
+          y1: item.cy + dy + size * 0.46,
+        });
+
+        const rectInsideBubble = (rect, item) => {
+          const rr = Math.max(1, item.rad - style.strokeW * 0.6);
+          return [[rect.x0, rect.y0], [rect.x1, rect.y0], [rect.x0, rect.y1], [rect.x1, rect.y1]]
+            .every(([x, y]) => Math.hypot(x - item.cx, y - item.cy) <= rr);
+        };
+
+        const circleRectPenalty = (circle, rect) => {
+          const nx = Math.max(rect.x0, Math.min(circle.cx, rect.x1));
+          const ny = Math.max(rect.y0, Math.min(circle.cy, rect.y1));
+          if (Math.hypot(nx - circle.cx, ny - circle.cy) >= circle.rad) return 0;
+
+          const probes = [
+            [(rect.x0 + rect.x1) / 2, (rect.y0 + rect.y1) / 2],
+            [rect.x0, rect.y0], [rect.x1, rect.y0], [rect.x0, rect.y1], [rect.x1, rect.y1],
+            [(rect.x0 + rect.x1) / 2, rect.y0], [(rect.x0 + rect.x1) / 2, rect.y1],
+            [rect.x0, (rect.y0 + rect.y1) / 2], [rect.x1, (rect.y0 + rect.y1) / 2],
+          ];
+
+          return probes.reduce((sum, [x, y]) => sum + (Math.hypot(x - circle.cx, y - circle.cy) < circle.rad ? 1 : 0), 1);
+        };
+
+        function chooseLabelOffset(item, laterItems, width, size) {
+          const blockers = laterItems.filter(b => circleOverlaps(item, b));
+          if (!blockers.length) return { dx: 0, dy: 0 };
+
+          const score = (dx, dy) => {
+            const rect = rectForLabel(item, width, size, dx, dy);
+            if (!rectInsideBubble(rect, item)) return Infinity;
+            return blockers.reduce((sum, b) => sum + circleRectPenalty(b, rect), 0);
+          };
+
+          const step = item.rad * 0.32;
+          const candidates = [
+            [0, 0],
+            [0, step], [0, -step], [step, 0], [-step, 0],
+            [step * 0.72, step * 0.72], [-step * 0.72, step * 0.72],
+            [step * 0.72, -step * 0.72], [-step * 0.72, -step * 0.72],
+            [0, step * 0.48], [0, -step * 0.48], [step * 0.48, 0], [-step * 0.48, 0],
+          ];
+
+          let best = { dx: 0, dy: 0, score: score(0, 0) };
+
+          for (const [dx, dy] of candidates.slice(1)) {
+            const s = score(dx, dy);
+            if (s < best.score) best = { dx, dy, score: s };
+            if (s === 0) break;
+          }
+
+          return best.score < score(0, 0) ? best : { dx: 0, dy: 0 };
+        }
+
+        const bubbleItems = risks.map(r => {
+          const top = (r.rank ?? r.num) <= opts.topN;
+          const cx = Math.max(plotRect.x, Math.min(plotRect.x + plotRect.w, X(r.likelihood)));
+          const cy = Math.max(plotRect.y, Math.min(plotRect.y + plotRect.h, Y(r.impact)));
+          const rad = radiusFor(r.velocity);
+          const item = {
+            r,
+            top,
+            cx,
+            cy,
+            rad,
+            fill: top ? style.topFill : style.stdFill,
+            stroke: top ? style.topStroke : style.stdStroke,
+          };
+
+          r._cx = cx;
+          r._cy = cy;
+          r._r = rad;
+
+          return item;
+        }).sort((a, b) => b.rad - a.rad || a.r.num - b.r.num);
+
+        /* Bubble groups are drawn largest-to-smallest so smaller bubbles stay visible above larger ones. */
+        bubbleItems.forEach((item, i) => {
+          const label = String(item.r.num);
+          let size = numSize0;
+          let w = numFont.widthOf(label, size);
+
+          if (w > item.rad * 1.7) {
+            size = size * (item.rad * 1.7) / w;
+            w = numFont.widthOf(label, size);
+          }
+
+          const off = chooseLabelOffset(item, bubbleItems.slice(i + 1), w, size);
+          const tx = item.cx + off.dx - w / 2;
+          const ty = item.cy + off.dy - size * 0.36;
+          const labelRect = rectForLabel(item, w, size, off.dx, off.dy);
+
+          bubbleOut.push('q');
+          bubbleOut.push(`${fmt(item.fill[0])} ${fmt(item.fill[1])} ${fmt(item.fill[2])} rg`);
+          bubbleOut.push(`${fmt(item.stroke[0])} ${fmt(item.stroke[1])} ${fmt(item.stroke[2])} RG`);
+          bubbleOut.push(`${fmt(style.strokeW)} w`);
+          bubbleOut.push(circlePath(item.cx, item.cy, item.rad));
+          bubbleOut.push('B');
+          bubbleOut.push('BT');
+          bubbleOut.push(`${fmt(numColor[0])} ${fmt(numColor[1])} ${fmt(numColor[2])} rg`);
+          bubbleOut.push(`${numFont.res} 1 Tf`);
+          bubbleOut.push(`${fmt(size)} 0 0 ${fmt(size)} ${fmt(tx)} ${fmt(ty)} Tm`);
+          bubbleOut.push(`${numFont.encode(label)} Tj`);
+          bubbleOut.push('ET');
+          bubbleOut.push('Q');
+
+          if (item.r._id != null) {
+            editItems.push({
+              type: 'risk-num',
+              id: item.r._id,
+              value: label,
+              rect: [labelRect.x0, labelRect.y0, labelRect.x1, labelRect.y1]
+            });
+          }
+        });
+
+        const lg = {
+          namesX: legendNamesSeg ? legendNamesSeg.x : plotRect.x + plotRect.w + 132,
+          topY: legendNamesSeg ? legendNamesSeg.y : plotRect.y + plotRect.h - 96,
+          size: legendNamesSeg ? legendNamesSeg.size : DEFAULTS.legend.size,
+          color: (legendNamesSeg && legendNamesSeg.fill) || style.legendColor,
+        };
+
+        const spacing0 = lg.size * DEFAULTS.legend.lineFactor;
+        const bottomMargin = 52;
+        const avail = lg.topY - bottomMargin;
+        const spacing = Math.min(spacing0, risks.length > 1 ? avail / (risks.length - 1) : avail);
+        const lsize = lg.size * Math.min(1, spacing / spacing0);
+        const maxNameW = pageW - lg.namesX - 24;
+
+        legendOut.push('BT');
+        legendOut.push(`${fmt(lg.color[0])} ${fmt(lg.color[1])} ${fmt(lg.color[2])} rg`);
+
+        risks.slice().sort((a, b) => a.num - b.num).forEach((r, i) => {
+          const y = lg.topY - i * spacing;
+          const numLabel = String(r.num);
+          const nf = numFont.canRender(numLabel) ? numFont : fbBold;
+          const nw = nf.widthOf(numLabel, lsize);
+          const numX = lg.namesX - lsize * 0.9 - nw;
+
+          legendOut.push(`${nf.res} 1 Tf`);
+          legendOut.push(`${fmt(lsize)} 0 0 ${fmt(lsize)} ${fmt(numX)} ${fmt(y)} Tm`);
+          legendOut.push(`${nf.encode(numLabel)} Tj`);
+
+          let nm = r.name;
+          while (nm.length > 1 && legendFont.widthOf(nm + '…', lsize) > maxNameW && legendFont.widthOf(nm, lsize) > maxNameW) nm = nm.slice(0, -1);
+          if (nm !== r.name) nm = nm.trimEnd() + (legendFont.canRender('…') ? '…' : '...');
+
+          const nameW = Math.min(maxNameW, Math.max(legendFont.widthOf(nm, lsize), 140));
+
+          legendOut.push(`${legendFont.res} 1 Tf`);
+          legendOut.push(`${fmt(lsize)} 0 0 ${fmt(lsize)} ${fmt(lg.namesX)} ${fmt(y)} Tm`);
+          legendOut.push(`${legendFont.encode(nm)} Tj`);
+
+          if (r._id != null) {
+            editItems.push({
+              type: 'risk-num',
+              id: r._id,
+              value: numLabel,
+              rect: [numX - 4, y - lsize * 0.25, lg.namesX - lsize * 0.15, y + lsize * 1.05]
+            });
+            editItems.push({
+              type: 'risk-name',
+              id: r._id,
+              value: r.name,
+              rect: [lg.namesX - 4, y - lsize * 0.25, Math.min(pageW - 16, lg.namesX + nameW + 8), y + lsize * 1.05]
+            });
+          }
+        });
+
+        legendOut.push('ET');
+
+        if (dateSeg) {
+          const currentDateText = opts.dateText || dateSeg.shows.map(s => s.text).join('').trim();
+          const dSize = dateSeg.size || 40;
+          const oldLeft = Math.min(...dateSeg.shows.map(s => s.x));
+          const oldApproxW = dateSeg.shows.reduce((s, sh) => s + sh.text.length, 0) * dSize * 0.45;
+          const cxDate = oldLeft + oldApproxW / 2;
+          let editW = Math.max(oldApproxW, 180);
+
+          if (opts.dateText) {
+            const dFont = await fontForResource(dateSeg.fontRes, opts.dateText, fbBold, 'Date');
+            const w = dFont.widthOf(opts.dateText, dSize);
+            editW = Math.max(editW, w);
+
+            dateOut.push('BT');
+            dateOut.push(`${fmt(dateSeg.fill[0])} ${fmt(dateSeg.fill[1])} ${fmt(dateSeg.fill[2])} rg`);
+            dateOut.push(`${dFont.res} 1 Tf`);
+            dateOut.push(`${fmt(dSize)} 0 0 ${fmt(dSize)} ${fmt(cxDate - w / 2)} ${fmt(dateSeg.y)} Tm`);
+            dateOut.push(`${dFont.encode(opts.dateText)} Tj`);
+            dateOut.push('ET');
+          }
+
+          editItems.push({
+            type: 'date',
+            value: currentDateText,
+            rect: [cxDate - editW / 2 - 8, dateSeg.y - dSize * 0.2, cxDate + editW / 2 + 8, dateSeg.y + dSize * 1.05]
+          });
+        }
+
+        const enc = s => {
+          const b = new Uint8Array(s.length);
+          for (let i = 0; i < s.length; i++) b[i] = s.charCodeAt(i) & 0xFF;
+          return b;
+        };
+
+        const mkStream = (str) => {
+          const deflated = pako.deflate(enc(str));
+          const dict = ctx.obj({ Filter: 'FlateDecode', Length: deflated.length });
+          return ctx.register(PDFRawStream.of(dict, deflated));
+        };
+
+        function ensureLayerResources(layers) {
+          let props = lkp(resDict.get(PDFName.of('Properties')));
+
+          if (!props) {
+            props = ctx.obj({});
+            resDict.set(PDFName.of('Properties'), props);
+          }
+
+          const refs = layers.map(({ tag, title }) => {
+            const key = PDFName.of(tag);
+            const existing = props.get(key);
+
+            if (existing instanceof PDFRef) return existing;
+
+            const dict = ctx.obj({});
+            dict.set(PDFName.of('Type'), PDFName.of('OCG'));
+            dict.set(PDFName.of('Name'), PDFString.of(title));
+
+            const ref = ctx.register(dict);
+            props.set(key, ref);
+
+            return ref;
+          });
+
+          const ocProps = ctx.obj({});
+          const defaults = ctx.obj({});
+
+          defaults.set(PDFName.of('Order'), ctx.obj(refs));
+          defaults.set(PDFName.of('ON'), ctx.obj(refs));
+
+          ocProps.set(PDFName.of('OCGs'), ctx.obj(refs));
+          ocProps.set(PDFName.of('D'), defaults);
+
+          pdfDoc.catalog.set(PDFName.of('OCProperties'), ocProps);
+        }
+
+        const layerDefs = [
+          { tag: 'HM_Text', title: 'Heat Map Text' },
+          { tag: 'HM_Bubbles', title: 'Heat Map Bubbles' },
+          { tag: 'HM_Legend', title: 'Heat Map Legend' },
+          { tag: 'HM_Date', title: 'Heat Map Date' },
+        ];
+
+        ensureLayerResources(layerDefs);
+
+        const layerContent = (tag, lines) => lines.length
+          ? [`/OC /${tag} BDC`, 'q', ...lines, 'Q', 'EMC'].join('\n')
+          : '';
+
+        const refs = [
+          mkStream(newContent),
+          mkStream(layerContent('HM_Text', staticOut)),
+          mkStream(layerContent('HM_Bubbles', bubbleOut)),
+          mkStream(layerContent('HM_Legend', legendOut)),
+        ];
+
+        if (dateOut.length) refs.push(mkStream(layerContent('HM_Date', dateOut)));
+
+        page.node.set(PDFName.of('Contents'), ctx.obj(refs));
+
+        try {
+          const pieceInfo = lkp(page.node.get(PDFName.of('PieceInfo')));
+          if (pieceInfo) {
+            const ill = lkp(pieceInfo.get(PDFName.of('Illustrator')));
+            if (ill) {
+              const priv = ill.get(PDFName.of('Private'));
+              const privDict = lkp(priv);
+              if (privDict && privDict.entries) {
+                for (const [, val] of privDict.entries()) if (val instanceof PDFRef) ctx.delete(val);
+              }
+              if (priv instanceof PDFRef) ctx.delete(priv);
+            }
+
+            const pir = page.node.get(PDFName.of('PieceInfo'));
+            if (pir instanceof PDFRef) ctx.delete(pir);
+            page.node.delete(PDFName.of('PieceInfo'));
+          }
+
+          const thumb = page.node.get(PDFName.of('Thumb'));
+          if (thumb) {
+            if (thumb instanceof PDFRef) ctx.delete(thumb);
+            page.node.delete(PDFName.of('Thumb'));
+          }
+        } catch (e) {
+          log('Note: could not strip Illustrator private data (' + e.message + ') - output is still valid.');
+        }
+
+        const bytes = await pdfDoc.save({ useObjectStreams: false });
+
+        return {
+          bytes,
+          info: {
+            bubblesRemoved: bubbles.length,
+            plotRect,
+            style,
+            oldDate: dateSeg ? dateSeg.shows.map(s => s.text).join('').trim() : null,
+            editItems
+          }
+        };
+      }
+
+
+      async function generateEmptyDataPreview(pdfBytes, opts) {
+        opts = Object.assign({ dateText: null, staticTextEdits: null, fontFiles: null, fontkit: null, log: () => { } }, opts || {});
+        const log = opts.log;
+
+        const pdfDoc = await PDFDocument.load(pdfBytes, { ignoreEncryption: true, updateMetadata: false });
+        const ctx = pdfDoc.context;
+        const page = pdfDoc.getPage(0);
+        const lkp = o => (o instanceof PDFRef) ? ctx.lookup(o) : o;
+        const contentsRef = page.node.get(PDFName.of('Contents'));
+        const streamRefs = [];
+
+        if (contentsRef instanceof PDFRef) streamRefs.push(contentsRef);
+        else if (lkp(contentsRef) instanceof PDFArray) lkp(contentsRef).asArray().forEach(r => streamRefs.push(r));
+
+        const bytesToLatin1 = (bytes) => {
+          let s = '';
+          for (let i = 0; i < bytes.length; i += 60000) s += String.fromCharCode.apply(null, bytes.subarray(i, i + 60000));
+          return s;
+        };
+
+        let content = '';
+
+        for (const ref of streamRefs) {
+          const stm = lkp(ref);
+          const raw = stm.contents || stm.getContents?.();
+          const filter = stm.dict.get(PDFName.of('Filter'));
+          const fname = filter && filter.asString ? filter.asString() : (filter ? String(filter) : '');
+          let bytes;
+
+          if (/Flate/.test(fname)) bytes = pako.inflate(raw);
+          else if (!filter) bytes = raw;
+          else throw new Error('Unsupported content stream filter: ' + fname);
+
+          content += bytesToLatin1(bytes) + '\n';
+        }
+
+        const { circles, plotRect, segments } = analyze(content);
+        if (!plotRect) throw new Error('Could not locate the plot area in the Illustrator file.');
+
+        const inPlot = (x, y) => x > plotRect.x - 2 && x < plotRect.x + plotRect.w + 2 && y > plotRect.y - 2 && y < plotRect.y + plotRect.h + 2;
+        const bubbles = circles.filter(c => inPlot(c.cx, c.cy) && c.range);
+        const removals = bubbles.map(b => b.range);
+        const textRemovalStarts = new Set();
+        const removeShow = show => {
+          if (!show) return;
+          textRemovalStarts.add(show.start);
+          removals.push([show.start, show.end]);
+        };
+
+        const KEEP = new Set(['graph legend', 'number', 'risk', 'graphlegend', 'graph', 'legend']);
+        let dateSeg = null;
+
+        for (const seg of segments) {
+          if (!seg.shows.length) continue;
+
+          const joined = seg.shows.map(s => s.text).join('');
+          const allDigits = seg.shows.every(s => /^\d+$/.test(s.text.trim()) || s.text.trim() === '');
+
+          if (inPlot(seg.x, seg.y) && allDigits) {
+            seg.shows.forEach(removeShow);
+            continue;
+          }
+
+          if (seg.x > plotRect.x + plotRect.w - 5) {
+            const letterShows = seg.shows.filter(s => /[A-Za-z]/.test(s.text));
+            const isHeaderSeg = letterShows.length > 0 && letterShows.every(s => KEEP.has(s.text.trim().toLowerCase().replace(/\s+/g, ' ')))
+              && seg.shows.length <= 4;
+
+            if (isHeaderSeg) continue;
+
+            seg.shows.forEach(s => {
+              if (KEEP.has(s.text.trim().toLowerCase())) return;
+              removeShow(s);
+            });
+
+            continue;
+          }
+
+          if (seg.y > plotRect.y + plotRect.h && /^(January|February|March|April|May|June|July|August|September|October|November|December)\s*\d{4}$/i.test(joined.trim())) {
+            dateSeg = seg;
+          }
+        }
+
+        if (opts.dateText && dateSeg) dateSeg.shows.forEach(removeShow);
+
+        const staticTextEdits = opts.staticTextEdits && typeof opts.staticTextEdits === 'object' ? opts.staticTextEdits : {};
+        const staticTextCandidates = [];
+
+        function staticTextKey(seg, shows, text) {
+          const first = shows[0];
+          return ['text', first ? first.start : 0, Math.round(seg.x * 10), Math.round(seg.y * 10), cleanEditableText(text).toLowerCase().replace(/[^a-z0-9]+/g, '-')].join(':');
+        }
+
+        for (const seg of segments) {
+          if (!seg || seg === dateSeg || !seg.shows || !seg.shows.length) continue;
+
+          const keptShows = seg.shows.filter(show => !textRemovalStarts.has(show.start));
+          if (!keptShows.length) continue;
+
+          for (const showGroup of splitEditableTextShows(seg, keptShows)) {
+            const text = cleanEditableText(showGroup.map(show => show.text).join(''));
+            if (!/[A-Za-z]/.test(text)) continue;
+
+            const key = staticTextKey(seg, showGroup, text);
+            const value = Object.prototype.hasOwnProperty.call(staticTextEdits, key)
+              ? cleanEditableText(staticTextEdits[key])
+              : text;
+
+            const item = {
+              key,
+              text,
+              value,
+              isEdited: value !== text,
+              shows: showGroup,
+              fontRes: showGroup[0].fontRes || seg.fontRes,
+              fill: seg.fill.slice(),
+              matrix: showMatrix(showGroup[0], seg).slice(),
+            };
+
+            if (item.isEdited) showGroup.forEach(removeShow);
+            staticTextCandidates.push(item);
+          }
+        }
+
+        removals.sort((a, b) => b[0] - a[0]);
+        let newContent = content;
+        let lastStart = Infinity;
+
+        for (const [s, e] of removals) {
+          if (e > lastStart) continue;
+          newContent = newContent.slice(0, s) + ' ' + newContent.slice(e);
+          lastStart = s;
+        }
+
+        const resDict = lkp(page.node.get(PDFName.of('Resources')));
+        let fontDict = lkp(resDict.get(PDFName.of('Font')));
+        if (!fontDict) { fontDict = ctx.obj({}); resDict.set(PDFName.of('Font'), fontDict); }
+
+        const freshName = base => {
+          let i = 0;
+          while (fontDict.get(PDFName.of(base + i))) i++;
+          return base + i;
+        };
+
+        const helv = await pdfDoc.embedFont(StandardFonts.Helvetica);
+        const helvBold = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
+        const helvRes = '/' + freshName('FRM');
+        const helvBoldRes = '/' + freshName('FRMB');
+
+        fontDict.set(PDFName.of(helvRes.slice(1)), helv.ref);
+        fontDict.set(PDFName.of(helvBoldRes.slice(1)), helvBold.ref);
+
+        const fbReg = makePdfLibFontAdapter(helv, helvRes, 'Helvetica');
+        const fbBold = makePdfLibFontAdapter(helvBold, helvBoldRes, 'Helvetica-Bold');
+
+        const uploadedFiles = Array.isArray(opts.fontFiles) ? opts.fontFiles : [];
+        const wantsCustom = !!(opts.fontkit && uploadedFiles.length);
+        if (wantsCustom) pdfDoc.registerFontkit(opts.fontkit);
+
+        const origAdapter = res => {
+          if (!res) return null;
+          const fd = fontDict.get(PDFName.of(res.replace(/^\//, '')));
+          return fd ? makeOriginalFontAdapter(ctx, fd, res) : null;
+        };
+
+        const uploadedFontCache = new Map();
+
+        async function embedMatchedUploadedFont(file, label) {
+          const key = file.name + ':' + (file.bytes && file.bytes.length || 0);
+          if (uploadedFontCache.has(key)) return uploadedFontCache.get(key);
+
+          try {
+            const font = await pdfDoc.embedFont(file.bytes, { subset: false });
+            const res = '/' + freshName('FUP');
+            fontDict.set(PDFName.of(res.slice(1)), font.ref);
+            const adapter = makePdfLibFontAdapter(font, res, file.meta && file.meta.fullName || file.name, 'uploaded');
+            uploadedFontCache.set(key, adapter);
+            log(`${label} font: matched uploaded font "${file.name}" to source font.`);
+            return adapter;
+          } catch (e) {
+            uploadedFontCache.set(key, null);
+            return null;
+          }
+        }
+
+        async function matchedUploadedFont(original, text, label) {
+          if (!wantsCustom || !original) return null;
+
+          const targetNames = original.targetNames && original.targetNames.length ? original.targetNames : [original.fontName, original.res];
+          const ranked = uploadedFiles
+            .map(file => ({ file, score: scoreUploadedFontMatch(file, targetNames) }))
+            .filter(x => x.score >= 260)
+            .sort((a, b) => b.score - a.score);
+
+          for (const item of ranked) {
+            const adapter = await embedMatchedUploadedFont(item.file, label);
+            if (adapter && adapter.canRender(text)) return adapter;
+          }
+
+          return null;
+        }
+
+        async function fontForResource(res, text, fallback, label) {
+          const original = origAdapter(res);
+          if (original && original.canRender(text)) return original;
+
+          const matched = await matchedUploadedFont(original, text, label);
+          if (matched) return matched;
+
+          return fallback;
+        }
+
+        const editItems = [];
+        const staticOut = [];
+        const dateOut = [];
+
+        for (const item of staticTextCandidates) {
+          const drawText = item.value;
+          const hitText = drawText || item.text || 'Text';
+          const font = await fontForResource(item.fontRes, hitText, fbReg, 'Editable text');
+          const rect = textBoundsFor(font, hitText, item.matrix);
+
+          editItems.push({
+            type: 'static-text',
+            key: item.key,
+            value: item.text,
+            text: item.text,
+            rect,
+          });
+
+          if (item.isEdited) {
+            if (!drawText) continue;
+            staticOut.push('BT');
+            staticOut.push(`${fmt(item.fill[0])} ${fmt(item.fill[1])} ${fmt(item.fill[2])} rg`);
+            staticOut.push(`${font.res} 1 Tf`);
+            staticOut.push(textMatrixToTm(item.matrix));
+            staticOut.push(`${font.encode(drawText)} Tj`);
+            staticOut.push('ET');
+          }
+        }
+
+        if (dateSeg) {
+          const currentDateText = opts.dateText || dateSeg.shows.map(s => s.text).join('').trim();
+          const dSize = dateSeg.size || 40;
+          const oldLeft = Math.min(...dateSeg.shows.map(s => s.x));
+          const oldApproxW = dateSeg.shows.reduce((s, sh) => s + sh.text.length, 0) * dSize * 0.45;
+          const cxDate = oldLeft + oldApproxW / 2;
+          let editW = Math.max(oldApproxW, 180);
+
+          if (opts.dateText) {
+            const dFont = await fontForResource(dateSeg.fontRes, opts.dateText, fbBold, 'Date');
+            const w = dFont.widthOf(opts.dateText, dSize);
+            editW = Math.max(editW, w);
+
+            dateOut.push('BT');
+            dateOut.push(`${fmt(dateSeg.fill[0])} ${fmt(dateSeg.fill[1])} ${fmt(dateSeg.fill[2])} rg`);
+            dateOut.push(`${dFont.res} 1 Tf`);
+            dateOut.push(`${fmt(dSize)} 0 0 ${fmt(dSize)} ${fmt(cxDate - w / 2)} ${fmt(dateSeg.y)} Tm`);
+            dateOut.push(`${dFont.encode(opts.dateText)} Tj`);
+            dateOut.push('ET');
+          }
+
+          editItems.push({
+            type: 'date',
+            value: currentDateText,
+            rect: [cxDate - editW / 2 - 8, dateSeg.y - dSize * 0.2, cxDate + editW / 2 + 8, dateSeg.y + dSize * 1.05]
+          });
+        }
+
+        const enc = s => {
+          const b = new Uint8Array(s.length);
+          for (let i = 0; i < s.length; i++) b[i] = s.charCodeAt(i) & 0xFF;
+          return b;
+        };
+
+        const mkStream = (str) => {
+          const deflated = pako.deflate(enc(str));
+          const dict = ctx.obj({ Filter: 'FlateDecode', Length: deflated.length });
+          return ctx.register(PDFRawStream.of(dict, deflated));
+        };
+
+        const refs = [mkStream(newContent)];
+        if (staticOut.length) refs.push(mkStream(['q', ...staticOut, 'Q'].join('\n')));
+        if (dateOut.length) refs.push(mkStream(['q', ...dateOut, 'Q'].join('\n')));
+        page.node.set(PDFName.of('Contents'), ctx.obj(refs));
+
+        const bytes = await pdfDoc.save({ useObjectStreams: false });
+
+        return {
+          bytes,
+          info: {
+            bubblesRemoved: bubbles.length,
+            plotRect,
+            oldDate: dateSeg ? dateSeg.shows.map(s => s.text).join('').trim() : null,
+            editItems
+          }
+        };
+      }
+
+      async function inspect(pdfBytes) {
+        const pdfDoc = await PDFDocument.load(pdfBytes, { ignoreEncryption: true, updateMetadata: false });
+        const ctx = pdfDoc.context;
+        const page = pdfDoc.getPage(0);
+        const lkp = o => (o instanceof PDFRef) ? ctx.lookup(o) : o;
+        const contentsRef = page.node.get(PDFName.of('Contents'));
+        const streamRefs = [];
+
+        if (contentsRef instanceof PDFRef) streamRefs.push(contentsRef);
+        else if (lkp(contentsRef) instanceof PDFArray) lkp(contentsRef).asArray().forEach(r => streamRefs.push(r));
+
+        let content = '';
+
+        for (const ref of streamRefs) {
+          const stm = lkp(ref);
+          const filter = stm.dict.get(PDFName.of('Filter'));
+          const fname = filter && filter.asString ? filter.asString() : (filter ? String(filter) : '');
+          let bytes;
+
+          if (/Flate/.test(fname)) bytes = pako.inflate(stm.contents);
+          else if (!filter) bytes = stm.contents;
+          else throw new Error('Unsupported content stream filter: ' + fname);
+
+          let s2 = '';
+          for (let i = 0; i < bytes.length; i += 60000) s2 += String.fromCharCode.apply(null, bytes.subarray(i, i + 60000));
+          content += s2 + '\n';
+        }
+
+        const { circles, plotRect, segments } = analyze(content);
+        if (!plotRect) throw new Error('Could not locate the plot area in this file.');
+
+        const inPlot = (x, y) => x > plotRect.x - 2 && x < plotRect.x + plotRect.w + 2 && y > plotRect.y - 2 && y < plotRect.y + plotRect.h + 2;
+        const plotBubbles = circles.filter(c => inPlot(c.cx, c.cy));
+        const distinct = new Set(plotBubbles.map(c => c.cx.toFixed(1) + ',' + c.cy.toFixed(1)));
+        const radii = inferRadiiFromBubbles(plotBubbles.filter(b => /^f/i.test(b.paint) || /^b/i.test(b.paint)));
+
+        let dateText = null;
+        for (const seg of segments) {
+          const j = seg.shows.map(s => s.text).join('').trim();
+          if (seg.y > plotRect.y + plotRect.h && /^(January|February|March|April|May|June|July|August|September|October|November|December)\s*\d{4}$/i.test(j)) {
+            dateText = j.replace(/(\d)/, ' $1').replace(/\s+/g, ' ').trim();
+          }
+        }
+
+        return {
+          bubbleCount: distinct.size,
+          plotRect,
+          dateText,
+          radii,
+          bubbleDiameters: { min: radii[1] * 2, mid: radii[3] * 2, max: radii[5] * 2 },
+          pageSize: { w: page.getWidth(), h: page.getHeight() }
+        };
+      }
+
+      return { parseRisksFromWorkbook, rankRisks, generate, generateEmptyDataPreview, inspect, analyze, tokenize };
+    }));
+  </script>
+
+  <script>
+    (function () {
+      'use strict';
+
+      const $ = id => document.getElementById(id);
+      const log = (...a) => console.log('[bubblr]', ...a);
+
+      let aiBytes = null;
+      let aiName = null;
+      let aiLoading = false;
+      let workbook = null;
+      let workbookName = null;
+      let lastValidSheetSelection = '';
+      let risks = null;
+      let lastBytes = null;
+      let staticTextEdits = {};
+
+      const fonts = { files: [] };
+      let nextRiskId = 1;
+
+      document.body.classList.add('start');
+
+      if (window.pdfjsLib) {
+        pdfjsLib.GlobalWorkerOptions.workerSrc =
+          'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+      }
+
+      const readAB = f => new Promise((res, rej) => {
+        const r = new FileReader();
+        r.onload = () => res(new Uint8Array(r.result));
+        r.onerror = rej;
+        r.readAsArrayBuffer(f);
+      });
+
+      function reservePreviewBox(w, h) {
+        if (!(w > 0 && h > 0)) return;
+        const c = $('pvCanvas');
+        c.width = Math.round(w);
+        c.height = Math.round(h);
+        $('pv').classList.add('primed');
+      }
+
+      async function primePreviewBox(bytes) {
+        try {
+          const doc = await PDFLib.PDFDocument.load(bytes, { ignoreEncryption: true, updateMetadata: false });
+          const page = doc.getPage(0);
+          reservePreviewBox(page.getWidth(), page.getHeight());
+        } catch (e) { /* keep the temporary preview box */ }
+      }
+
+      function hasCoreAssets() {
+        return !!(aiBytes && risks && risks.length);
+      }
+
+      function hasWorkspace() {
+        return aiLoading || !!aiBytes;
+      }
+
+      let keepAdvancedOpen = false;
+      let dataParseMessage = '';
+
+      function rememberAdvancedOpen() {
+        keepAdvancedOpen = keepAdvancedOpen || $('advanced').open;
+      }
+
+      function updateLayout() {
+        const ready = hasWorkspace();
+        const wasOpen = $('advanced').open || keepAdvancedOpen;
+        document.body.classList.toggle('ready', ready);
+        document.body.classList.toggle('start', !ready);
+        if (ready && wasOpen) $('advanced').open = true;
+      }
+
+      function ensureRiskIds() {
+        if (!risks) return;
+        risks.forEach(r => {
+          if (r._id == null) r._id = 'risk-' + nextRiskId++;
+        });
+      }
+
+      function extOf(file) {
+        const m = String(file && file.name || '').toLowerCase().match(/\.([^.]+)$/);
+        return m ? m[1] : '';
+      }
+
+      function isAiFile(file) { return /^(ai|pdf)$/.test(extOf(file)); }
+      function isSpreadsheet(file) { return /^(xlsx|xlsm|xls|csv)$/.test(extOf(file)); }
+      function isFont(file) { return /^(ttf|otf)$/.test(extOf(file)); }
+
+      function wireDrop(dropId, inputId) {
+        const d = $(dropId), inp = $(inputId);
+
+        d.addEventListener('click', e => { if (e.target !== inp) inp.click(); });
+        inp.addEventListener('change', () => {
+          if (inp.files.length) routeFiles(inp.files);
+          inp.value = '';
+        });
+      }
+
+      async function routeFiles(fileList) {
+        const fileArray = [...fileList];
+        const aiFile = fileArray.find(isAiFile);
+        const xlFile = fileArray.find(isSpreadsheet);
+        const fontFiles = fileArray.filter(isFont);
+
+        if (!aiFile && !xlFile && !fontFiles.length) return;
+
+        if (aiFile) await loadIllustratorFile(aiFile);
+        if (xlFile) await loadSpreadsheetFile(xlFile);
+        if (fontFiles.length) await loadFontFiles(fontFiles);
+
+        updateLayout();
+        schedule();
+      }
+
+      let pageDragDepth = 0;
+
+      document.addEventListener('dragenter', e => {
+        if (!e.dataTransfer || ![...e.dataTransfer.types].includes('Files')) return;
+        e.preventDefault();
+        pageDragDepth++;
+        document.body.classList.add('file-over');
+      });
+
+      document.addEventListener('dragover', e => {
+        if (!e.dataTransfer || ![...e.dataTransfer.types].includes('Files')) return;
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'copy';
+      });
+
+      document.addEventListener('dragleave', e => {
+        if (!e.dataTransfer || ![...e.dataTransfer.types].includes('Files')) return;
+        pageDragDepth = Math.max(0, pageDragDepth - 1);
+        if (!pageDragDepth) document.body.classList.remove('file-over');
+      });
+
+      document.addEventListener('drop', e => {
+        if (!e.dataTransfer || !e.dataTransfer.files.length) return;
+        e.preventDefault();
+        pageDragDepth = 0;
+        document.body.classList.remove('file-over');
+        routeFiles(e.dataTransfer.files);
+      });
+
+      function readFontMeta(bytes, fallbackName) {
+        if (!window.fontkit || !window.fontkit.create) return { fullName: fallbackName };
+
+        const views = [bytes, bytes.buffer && bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength)].filter(Boolean);
+
+        for (const data of views) {
+          try {
+            const f = window.fontkit.create(data);
+            return {
+              postscriptName: f.postscriptName || '',
+              fullName: f.fullName || '',
+              familyName: f.familyName || '',
+              subfamilyName: f.subfamilyName || '',
+            };
+          } catch (e) { /* try the next representation */ }
+        }
+
+        return { fullName: fallbackName };
+      }
+
+      function fontMetaLabel(file) {
+        const m = file.meta || {};
+        return m.fullName || [m.familyName, m.subfamilyName].filter(Boolean).join(' ') || m.postscriptName || file.name;
+      }
+
+      function resetSheetOptions() {
+        $('optSheet').innerHTML = '<option value="">Auto</option>';
+        $('optSheet').disabled = true;
+      }
+
+      function populateSheetOptions(selected) {
+        const sel = $('optSheet');
+        sel.innerHTML = '<option value="">Auto</option>';
+
+        if (!workbook || !workbook.SheetNames || !workbook.SheetNames.length) {
+          sel.disabled = true;
+          return;
+        }
+
+        workbook.SheetNames.forEach(name => {
+          const opt = document.createElement('option');
+          opt.value = name;
+          opt.textContent = name;
+          sel.appendChild(opt);
+        });
+
+        sel.disabled = false;
+        sel.value = selected && workbook.SheetNames.includes(selected) ? selected : '';
+      }
+
+      function parseSelectedWorkbookSheet() {
+        if (!workbook) return null;
+
+        const selectedSheet = $('optSheet').value || null;
+        const parsed = RiskMapCore.parseRisksFromWorkbook(XLSX, workbook, { sheetName: selectedSheet });
+        const parsedRisks = parsed.risks;
+
+        risks = parsedRisks;
+        dataParseMessage = '';
+        lastValidSheetSelection = $('optSheet').value || '';
+        ensureRiskIds();
+        $('dropXl').classList.add('loaded');
+        $('xlLabel').textContent = `${workbookName} - ${risks.length} risks`;
+
+        log(`Spreadsheet "${workbookName}": ${risks.length} risks parsed from ${parsed.sourceType} worksheet "${parsed.sheetName}".`);
+        console.table(risks.map(r => ({
+          num: r.num,
+          risk: r.name,
+          impact: r.impact,
+          likelihood: r.likelihood,
+          velocity: r.velocity,
+          score: r.score,
+          rank: r.rank
+        })));
+
+        renderTable();
+        return parsed;
+      }
+
+      async function renderSourcePreview() {
+        if (!aiBytes || !window.pdfjsLib) return;
+
+        try {
+          const result = await RiskMapCore.generateEmptyDataPreview(aiBytes, {
+            ...opts(),
+            fontFiles: fonts.files,
+            fontkit: window.fontkit || null,
+            log: m => log(m),
+          });
+          await renderPreview(result.bytes, result.info.editItems || []);
+        } catch (err) {
+          console.warn('[bubblr] Could not render the cleaned Illustrator preview:', err.message);
+          try { await renderPreview(aiBytes, []); } catch (fallbackErr) { /* leave the existing preview alone */ }
+        }
+      }
+
+      function clearParsedData(message) {
+        risks = null;
+        lastBytes = null;
+        dataParseMessage = message || 'No parseable risk data on this worksheet.';
+        $('btnDl').disabled = true;
+        renderTable();
+        updateLayout();
+        renderSourcePreview();
+      }
+
+      /* ---------- file handlers ---------- */
+      async function loadIllustratorFile(f) {
+        aiLoading = true;
+        $('pv').classList.add('busy', 'loading');
+        $('pv').classList.remove('primed');
+        reservePreviewBox(16, 10);
+        updateLayout();
+        await new Promise(requestAnimationFrame);
+
+        try {
+          aiBytes = await readAB(f);
+          aiName = f.name;
+          staticTextEdits = {};
+          lastBytes = null;
+
+          $('dropAi').classList.add('loaded');
+          $('aiLabel').textContent = f.name;
+          await primePreviewBox(aiBytes);
+          await new Promise(requestAnimationFrame);
+
+          const info = await RiskMapCore.inspect(aiBytes);
+
+          if (info.dateText) $('optDate').placeholder = info.dateText;
+
+          if (info.bubbleDiameters) {
+            $('optBubbleMin').placeholder = `${info.bubbleDiameters.min.toFixed(1)} auto`;
+            $('optBubbleMax').placeholder = `${info.bubbleDiameters.max.toFixed(1)} auto`;
+          }
+
+          log(`Illustrator file "${f.name}":`, info);
+
+        } catch (err) {
+          aiBytes = null;
+          aiName = null;
+          lastBytes = null;
+          $('dropAi').classList.remove('loaded');
+          $('aiLabel').textContent = '.ai';
+          $('btnDl').disabled = true;
+          $('pv').classList.remove('busy', 'loading', 'primed');
+          console.error('[bubblr] Could not read the Illustrator file:', err.message,
+            '- the .ai must be saved with PDF compatibility (Illustrator default).');
+        } finally {
+          aiLoading = false;
+          updateLayout();
+        }
+      }
+
+      async function loadSpreadsheetFile(f) {
+        const prevWorkbook = workbook;
+        const prevWorkbookName = workbookName;
+        const prevRisks = risks;
+        const prevLastBytes = lastBytes;
+        const prevSheetSelection = lastValidSheetSelection;
+        const prevParseMessage = dataParseMessage;
+        const prevSelectedOption = $('optSheet').value || '';
+
+        let nextWorkbook;
+
+        try {
+          nextWorkbook = XLSX.read(await readAB(f), { type: 'array' });
+        } catch (err) {
+          workbook = prevWorkbook;
+          workbookName = prevWorkbookName;
+          risks = prevRisks;
+          lastBytes = prevLastBytes;
+          lastValidSheetSelection = prevSheetSelection;
+          dataParseMessage = prevParseMessage;
+
+          if (workbook) {
+            populateSheetOptions(prevSelectedOption);
+            $('dropXl').classList.add('loaded');
+            $('xlLabel').textContent = dataParseMessage
+              ? `${workbookName} - no parseable data`
+              : `${workbookName} - ${risks ? risks.length : 0} risks`;
+          } else {
+            $('dropXl').classList.remove('loaded');
+            $('xlLabel').textContent = '.xlsx / .xlsm';
+            resetSheetOptions();
+            $('btnDl').disabled = true;
+          }
+
+          renderTable();
+          updateLayout();
+
+          console.error('[bubblr] Could not read the spreadsheet:', err.message);
+          return;
+        }
+
+        workbook = nextWorkbook;
+        workbookName = f.name;
+        lastValidSheetSelection = '';
+        dataParseMessage = '';
+        populateSheetOptions('');
+
+        try {
+          parseSelectedWorkbookSheet();
+        } catch (err) {
+          clearParsedData(err.message || 'No parseable risk data on this worksheet.');
+          $('dropXl').classList.add('loaded');
+          $('xlLabel').textContent = `${workbookName} - no parseable data`;
+          console.warn('[bubblr] Spreadsheet loaded, but no worksheet contains valid risk data:', err.message);
+        }
+      }
+
+      async function loadFontFiles(files) {
+        if (!window.fontkit) {
+          console.warn('[bubblr] fontkit unavailable. custom fonts cannot be embedded.');
+          return;
+        }
+
+        const loaded = [];
+
+        for (const f of files) {
+          const bytes = await readAB(f);
+          const meta = readFontMeta(bytes, f.name);
+          const item = { name: f.name, bytes, meta };
+          loaded.push(item);
+          log(`Loaded font "${f.name}"${fontMetaLabel(item) !== f.name ? ` (${fontMetaLabel(item)})` : ''}.`);
+        }
+
+        fonts.files = loaded;
+
+        $('dropFont').classList.toggle('loaded', fonts.files.length > 0);
+        $('fontLabel').textContent = fonts.files.length
+          ? `${fonts.files.length} font${fonts.files.length === 1 ? '' : 's'} loaded`
+          : 'optional .ttf / .otf';
+      }
+
+      wireDrop('dropAi', 'fileAi');
+      wireDrop('dropXl', 'fileXl');
+      wireDrop('dropFont', 'fileFont');
+
+      /* ---------- advanced controls ---------- */
+      $('advanced').addEventListener('toggle', () => {
+        if (!$('advanced').open) keepAdvancedOpen = false;
+      });
+
+      $('advanced').querySelector('.adv').addEventListener('click', e => e.stopPropagation());
+      $('advanced').querySelector('.adv').addEventListener('keydown', e => {
+        if (e.key === 'Enter' || e.key === ' ') e.stopPropagation();
+      });
+
+      ['optTopN', 'optMin', 'optMax', 'optDate', 'optBubbleMin', 'optBubbleMax'].forEach(id => {
+        $(id).addEventListener('input', () => {
+          rememberAdvancedOpen();
+          if (id === 'optTopN') paintTopMarks();
+          schedule();
+        });
+      });
+
+      $('optSheet').addEventListener('change', () => {
+        rememberAdvancedOpen();
+
+        try {
+          parseSelectedWorkbookSheet();
+          updateLayout();
+          schedule();
+        } catch (err) {
+          clearParsedData(err.message || 'No parseable risk data on this worksheet.');
+          $('xlLabel').textContent = `${workbookName} - no parseable data`;
+          console.warn('[bubblr] Selected worksheet does not contain valid risk data:', err.message);
+        }
+      });
+
+      const opts = () => ({
+        topN: Math.max(0, parseInt($('optTopN').value || '10', 10)),
+        axisMin: parseFloat($('optMin').value || '0'),
+        axisMax: parseFloat($('optMax').value || '6'),
+        dateText: $('optDate').value.trim() || null,
+        bubbleMinDiameter: $('optBubbleMin').value === '' ? null : parseFloat($('optBubbleMin').value),
+        bubbleMaxDiameter: $('optBubbleMax').value === '' ? null : parseFloat($('optBubbleMax').value),
+        staticTextEdits,
+      });
+
+      /* ---------- editable data table ---------- */
+      const COLS = [
+        { k: 'num', cls: 'n', step: '1' },
+        { k: 'name' },
+        { k: 'impact', cls: 'n', step: '0.05' },
+        { k: 'likelihood', cls: 'n', step: '0.05' },
+        { k: 'velocity', cls: 'n', step: '1' },
+        { k: 'score', cls: 'n', step: '0.1' },
+      ];
+
+      function renderTable() {
+        const has = !!(risks && risks.length);
+        const showMessage = !!dataParseMessage && !!workbook && !has;
+
+        $('dataMsg').style.display = showMessage ? '' : 'none';
+        $('dataMsg').textContent = showMessage ? dataParseMessage : '';
+        $('tableWrap').style.display = has ? '' : 'none';
+        $('addRow').style.display = has ? '' : 'none';
+
+        if (!has) {
+          $('riskTable').tBodies[0].innerHTML = '';
+          return;
+        }
+
+        const tb = $('riskTable').tBodies[0];
+        tb.innerHTML = '';
+
+        risks.forEach((r, idx) => {
+          const tr = document.createElement('tr');
+
+          for (const c of COLS) {
+            const td = document.createElement('td');
+            const inp = document.createElement('input');
+
+            if (c.cls) {
+              inp.className = c.cls;
+              inp.type = 'number';
+              inp.step = c.step;
+            }
+
+            inp.value = r[c.k] ?? '';
+
+            inp.addEventListener('input', () => {
+              r[c.k] = c.cls ? (inp.value === '' ? null : parseFloat(inp.value)) : inp.value;
+              RiskMapCore.rankRisks(risks);
+              paintTopMarks();
+              schedule();
+            });
+
+            td.appendChild(inp);
+            tr.appendChild(td);
+          }
+
+          const td = document.createElement('td');
+          td.className = 'x';
+
+          const del = document.createElement('button');
+          del.textContent = '✕';
+          del.title = 'Remove row';
+          del.addEventListener('click', () => {
+            risks.splice(idx, 1);
+            RiskMapCore.rankRisks(risks);
+            renderTable();
+            schedule();
+          });
+
+          td.appendChild(del);
+          tr.appendChild(td);
+          tb.appendChild(tr);
+        });
+
+        paintTopMarks();
+      }
+
+      function paintTopMarks() {
+        if (!risks) return;
+
+        const n = Math.max(0, parseInt($('optTopN').value || '10', 10));
+
+        [...$('riskTable').tBodies[0].rows].forEach((tr, i) => {
+          const r = risks[i];
+          tr.classList.toggle('top', !!r && (r.rank ?? r.num) <= n);
+        });
+      }
+
+      $('addRow').addEventListener('click', () => {
+        if (!risks) risks = [];
+
+        const maxNum = risks.reduce((m, r) => Math.max(m, r.num || 0), 0);
+
+        risks.push({
+          _id: 'risk-' + nextRiskId++,
+          num: maxNum + 1,
+          name: 'New risk',
+          impact: 3,
+          likelihood: 3,
+          velocity: 3,
+          score: null
+        });
+
+        RiskMapCore.rankRisks(risks);
+        renderTable();
+        schedule();
+      });
+
+      /* ---------- generation + live preview ---------- */
+      let timer = null;
+      let busy = false;
+      let dirty = false;
+      let previewState = { items: [], viewport: null };
+      let previewResizeFrame = 0;
+      let previewRevealId = 0;
+      let activePreviewEdit = null;
+
+      function schedule() {
+        rememberAdvancedOpen();
+        clearTimeout(timer);
+        timer = setTimeout(regen, 350);
+      }
+
+      async function generateWithFontFallback(valid, o) {
+        try {
+          return await RiskMapCore.generate(aiBytes, valid, {
+            ...o,
+            fontFiles: fonts.files,
+            fontkit: window.fontkit || null,
+            log: m => log(m),
+          });
+        } catch (fontErr) {
+          if (!fonts.files.length) throw fontErr;
+          console.warn('[bubblr] Custom font generation failed; retrying with embedded/source fonts only:', fontErr);
+          return RiskMapCore.generate(aiBytes, valid, {
+            ...o,
+            fontFiles: [],
+            fontkit: null,
+            log: m => log(m),
+          });
+        }
+      }
+
+      async function regen() {
+        updateLayout();
+
+        if (!hasCoreAssets()) {
+          $('btnDl').disabled = true;
+          lastBytes = null;
+          if (aiBytes) await renderSourcePreview();
+          else $('editLayer').innerHTML = '';
+          return;
+        }
+
+        if (busy) {
+          dirty = true;
+          return;
+        }
+
+        busy = true;
+        dirty = false;
+        $('pv').classList.add('busy');
+
+        try {
+          const o = opts();
+
+          if (!(o.axisMax > o.axisMin)) throw new Error('Axis max must be greater than axis min.');
+
+          ensureRiskIds();
+          const valid = risks.filter(r => r.name && r.impact != null && r.likelihood != null);
+
+          const { bytes, info } = await generateWithFontFallback(valid, o);
+
+          lastBytes = bytes;
+          $('btnDl').disabled = false;
+
+          await renderPreview(bytes, info.editItems || []);
+
+          log(`Preview updated - ${valid.length} bubbles (${info.bubblesRemoved} old paint ops replaced).`);
+        } catch (err) {
+          console.error('[bubblr] Generation failed:', err);
+        } finally {
+          busy = false;
+          $('pv').classList.remove('busy');
+          updateLayout();
+
+          if (dirty) schedule();
+        }
+      }
+
+      async function renderPreview(bytes, editItems) {
+        if (!window.pdfjsLib) return;
+
+        const doc = await pdfjsLib.getDocument({ data: bytes.slice() }).promise;
+
+        try {
+          const page = await doc.getPage(1);
+          const base = page.getViewport({ scale: 1 });
+          const availableWidth = $('pv').clientWidth || $('pv').parentElement?.clientWidth || 1060;
+          const scale = Math.min(2, Math.max(0.1, availableWidth * (window.devicePixelRatio || 1) / base.width));
+          const vp = page.getViewport({ scale });
+          const c = document.createElement('canvas');
+
+          c.width = vp.width;
+          c.height = vp.height;
+
+          await page.render({ canvasContext: c.getContext('2d'), viewport: vp }).promise;
+
+          $('pv').classList.add('primed');
+          $('pv').classList.remove('busy', 'loading');
+          await revealPreviewCanvas(c);
+          previewState = { items: editItems || [], viewport: vp };
+          renderEditLayer(previewState.items, previewState.viewport);
+        } finally {
+          doc.destroy();
+        }
+      }
+
+      function revealPreviewCanvas(next) {
+        const live = $('pvCanvas');
+        const ctx = live.getContext('2d');
+        const prev = document.createElement('canvas');
+        const hadPreview = live.width > 20 && live.height > 20;
+        const instant = matchMedia('(prefers-reduced-motion: reduce)').matches;
+        const id = ++previewRevealId;
+
+        prev.width = next.width;
+        prev.height = next.height;
+        const pctx = prev.getContext('2d');
+        pctx.fillStyle = '#fff';
+        pctx.fillRect(0, 0, prev.width, prev.height);
+        if (hadPreview) pctx.drawImage(live, 0, 0, prev.width, prev.height);
+
+        live.width = next.width;
+        live.height = next.height;
+
+        if (instant) {
+          ctx.drawImage(next, 0, 0);
+          return Promise.resolve();
+        }
+
+        const tile = Math.max(48, Math.min(160, Math.round(next.width / 12)));
+        const tiles = [];
+        for (let y = 0; y < next.height; y += tile) {
+          for (let x = 0; x < next.width; x += tile) {
+            const wave = (x / next.width + y / next.height) * 110;
+            tiles.push({ x, y, w: Math.min(tile + 1, next.width - x), h: Math.min(tile + 1, next.height - y), delay: wave + Math.random() * 90 });
+          }
+        }
+
+        const duration = hadPreview ? 260 : 520;
+        const ease = t => t * t * (3 - 2 * t);
+        const start = performance.now();
+
+        return new Promise(resolve => {
+          function frame(now) {
+            if (id !== previewRevealId) return resolve();
+            const elapsed = now - start;
+
+            ctx.globalAlpha = 1;
+            ctx.drawImage(prev, 0, 0);
+
+            let done = true;
+            for (const r of tiles) {
+              const a = Math.max(0, Math.min(1, (elapsed - r.delay) / duration));
+              if (a < 1) done = false;
+              if (a <= 0) continue;
+              ctx.globalAlpha = ease(a);
+              ctx.drawImage(next, r.x, r.y, r.w, r.h, r.x, r.y, r.w, r.h);
+            }
+
+            ctx.globalAlpha = 1;
+            if (done || elapsed > duration + 260) {
+              ctx.drawImage(next, 0, 0);
+              resolve();
+            } else requestAnimationFrame(frame);
+          }
+          requestAnimationFrame(frame);
+        });
+      }
+
+      function syncEditLayerBox() {
+        const layer = $('editLayer');
+        const c = $('pvCanvas');
+
+        const width = c.clientWidth || 0;
+        const height = c.clientHeight || 0;
+
+        layer.style.left = (c.offsetLeft + c.clientLeft) + 'px';
+        layer.style.top = (c.offsetTop + c.clientTop) + 'px';
+        layer.style.width = width + 'px';
+        layer.style.height = height + 'px';
+
+        return width > 0 && height > 0;
+      }
+
+      function requestPreviewOverlaySync() {
+        if (previewResizeFrame) cancelAnimationFrame(previewResizeFrame);
+        previewResizeFrame = requestAnimationFrame(() => {
+          previewResizeFrame = 0;
+          if (!previewState.viewport || activePreviewEdit) return;
+          renderEditLayer(previewState.items, previewState.viewport);
+        });
+      }
+
+      function renderEditLayer(items, vp) {
+        const layer = $('editLayer');
+        const c = $('pvCanvas');
+
+        layer.innerHTML = '';
+
+        if (!syncEditLayerBox() || !vp) return;
+
+        const sx = c.clientWidth / c.width || 1;
+        const sy = c.clientHeight / c.height || 1;
+
+        for (const item of items || []) {
+          if (item.type === 'risk-num') continue;
+          if (!item.rect || item.rect.length !== 4) continue;
+
+          const r = vp.convertToViewportRectangle(item.rect);
+          const left = Math.min(r[0], r[2]) * sx;
+          const top = Math.min(r[1], r[3]) * sy;
+          const width = Math.abs(r[2] - r[0]) * sx;
+          const height = Math.abs(r[3] - r[1]) * sy;
+
+          if (width < 4 || height < 4) continue;
+
+          const hit = document.createElement('button');
+          hit.type = 'button';
+          hit.className = 'editHit';
+          hit.title = item.type === 'date' ? 'Edit date label' : (item.type === 'static-text' ? 'Edit text label' : 'Edit risk name');
+          hit.style.left = left + 'px';
+          hit.style.top = top + 'px';
+          hit.style.width = width + 'px';
+          hit.style.height = height + 'px';
+          hit.addEventListener('click', () => startPreviewEdit(hit, item));
+
+          layer.appendChild(hit);
+        }
+      }
+
+      function currentPreviewValue(item) {
+        if (item.type === 'date') return $('optDate').value || item.value || $('optDate').placeholder || '';
+        if (item.type === 'static-text') return staticTextEdits[item.key] ?? item.value ?? item.text ?? '';
+
+        const r = risks && risks.find(x => x._id === item.id);
+        if (!r) return item.value || '';
+
+        if (item.type === 'risk-num') return r.num ?? '';
+        return r.name ?? '';
+      }
+
+      function startPreviewEdit(hit, item) {
+        const layer = $('editLayer');
+        const input = document.createElement('input');
+        const left = parseFloat(hit.style.left) || 0;
+        const top = parseFloat(hit.style.top) || 0;
+        const width = parseFloat(hit.style.width) || 80;
+        const height = parseFloat(hit.style.height) || 22;
+        let done = false;
+
+        if (activePreviewEdit && activePreviewEdit.finish) activePreviewEdit.finish(true);
+
+        input.className = 'editInput';
+        input.value = currentPreviewValue(item);
+        input.style.left = left + 'px';
+        input.style.top = top + 'px';
+        input.style.width = Math.max(width, item.type === 'risk-name' || item.type === 'static-text' ? 180 : 80) + 'px';
+        input.style.minHeight = Math.max(height, 24) + 'px';
+
+        if (item.type === 'risk-num') {
+          input.type = 'number';
+          input.step = '1';
+        }
+
+        function finish(save) {
+          if (done) return;
+          done = true;
+
+          if (save) commitPreviewEdit(item, input.value);
+
+          input.remove();
+          hit.style.display = '';
+          if (activePreviewEdit && activePreviewEdit.input === input) activePreviewEdit = null;
+          requestPreviewOverlaySync();
+        }
+
+        activePreviewEdit = { input, finish };
+
+        input.addEventListener('keydown', e => {
+          if (e.key === 'Enter') finish(true);
+          if (e.key === 'Escape') finish(false);
+        });
+
+        input.addEventListener('blur', () => finish(true));
+
+        hit.style.display = 'none';
+        layer.appendChild(input);
+        input.focus();
+        input.select();
+      }
+
+      function commitPreviewEdit(item, value) {
+        if (item.type === 'date') {
+          $('optDate').value = String(value || '').trim();
+          schedule();
+          return;
+        }
+
+        if (item.type === 'static-text') {
+          const text = String(value || '').replace(/\s+/g, ' ').trim();
+          if (text === String(item.value || '').trim()) delete staticTextEdits[item.key];
+          else staticTextEdits[item.key] = text;
+          schedule();
+          return;
+        }
+
+        const r = risks && risks.find(x => x._id === item.id);
+        if (!r) return;
+
+        if (item.type === 'risk-num') {
+          const n = parseFloat(value);
+          if (!isFinite(n)) return;
+          r.num = n;
+        } else {
+          const name = String(value || '').replace(/\s+/g, ' ').trim();
+          if (!name) return;
+          r.name = name;
+        }
+
+        RiskMapCore.rankRisks(risks);
+        renderTable();
+        schedule();
+      }
+
+      async function pdfBytesToSvg(bytes) {
+        if (!window.pdfjsLib || !pdfjsLib.SVGGraphics) {
+          throw new Error('SVG export requires the PDF.js SVG renderer, which is unavailable in this browser build.');
+        }
+
+        const doc = await pdfjsLib.getDocument({ data: bytes.slice() }).promise;
+
+        try {
+          const page = await doc.getPage(1);
+          const viewport = page.getViewport({ scale: 1 });
+          const opList = await page.getOperatorList();
+          const svgGfx = new pdfjsLib.SVGGraphics(page.commonObjs, page.objs);
+
+          svgGfx.embedFonts = true;
+
+          const svg = await svgGfx.getSVG(opList, viewport);
+          svg.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
+
+          return new XMLSerializer().serializeToString(svg);
+        } finally {
+          doc.destroy();
+        }
+      }
+
+      resetSheetOptions();
+
+      if (window.ResizeObserver) {
+        const previewObserver = new ResizeObserver(requestPreviewOverlaySync);
+        previewObserver.observe($('pv'));
+        previewObserver.observe($('pvCanvas'));
+      }
+
+      window.addEventListener('resize', requestPreviewOverlaySync);
+
+      $('btnDl').addEventListener('click', async () => {
+        if (!lastBytes) return;
+
+        const format = $('optFormat').value || 'pdf';
+        const base = (aiName || 'heat-map.ai').replace(/\.(ai|pdf)$/i, '');
+        const a = document.createElement('a');
+        let blob;
+
+        try {
+          if (format === 'svg') {
+            blob = new Blob([await pdfBytesToSvg(lastBytes)], { type: 'image/svg+xml' });
+          } else {
+            blob = new Blob([lastBytes], { type: 'application/pdf' });
+          }
+
+          a.href = URL.createObjectURL(blob);
+          a.download = `${base}_updated.${format}`;
+          a.click();
+
+          setTimeout(() => URL.revokeObjectURL(a.href), 30000);
+          log(`Downloaded "${a.download}".`);
+        } catch (err) {
+          console.error(`[bubblr] Could not export ${format.toUpperCase()}:`, err);
+        }
+      });
+
+      updateLayout();
+    })();
+  </script>
+</body>
+
+</html>
