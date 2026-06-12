@@ -1301,15 +1301,107 @@
         ];
       }
 
-      function centeredTextMatrix(matrix, oldFont, oldText, newFont, newText) {
+      function alignedTextMatrix(matrix, oldFont, oldText, newFont, newText, align) {
         const m = matrix.slice();
         const oldW = Math.max(0, oldFont.widthOf(cleanEditableText(oldText), 1));
         const newW = Math.max(0, newFont.widthOf(cleanEditableText(newText), 1));
-        const anchorX = matrix[4] + matrix[0] * oldW / 2;
-        const anchorY = matrix[5] + matrix[1] * oldW / 2;
-        m[4] = anchorX - matrix[0] * newW / 2;
-        m[5] = anchorY - matrix[1] * newW / 2;
+        const t = align === 'right' ? 1 : align === 'center' ? 0.5 : 0;
+        const anchorX = matrix[4] + matrix[0] * oldW * t;
+        const anchorY = matrix[5] + matrix[1] * oldW * t;
+        m[4] = anchorX - matrix[0] * newW * t;
+        m[5] = anchorY - matrix[1] * newW * t;
         return m;
+      }
+
+      function centeredTextMatrix(matrix, oldFont, oldText, newFont, newText) {
+        return alignedTextMatrix(matrix, oldFont, oldText, newFont, newText, 'center');
+      }
+
+      function rectLike(x, y, w, h) {
+        return isFinite(x) && isFinite(y) && isFinite(w) && isFinite(h) ? { x, y, w, h } : null;
+      }
+
+      function addTextAnchorSamples(rect, addAnchor) {
+        if (!rect || !isFinite(rect.x) || !isFinite(rect.y) || !isFinite(rect.w) || !isFinite(rect.h)) return;
+        const x0 = rect.x, x1 = rect.x + rect.w, y0 = rect.y, y1 = rect.y + rect.h;
+        const cx = (x0 + x1) / 2, cy = (y0 + y1) / 2;
+        [0, 0.25, 0.5, 0.75, 1].forEach(t => {
+          addAnchor(x0 + rect.w * t, cy);
+          addAnchor(cx, y0 + rect.h * t);
+        });
+        addAnchor(x0, cy);
+        addAnchor(x1, cy);
+        addAnchor(cx, y0);
+        addAnchor(cx, y1);
+      }
+
+      function inferArtworkRect(circles, segments, plotRect) {
+        const xs = [], ys = [];
+        const add = (x, y) => {
+          if (isFinite(x) && isFinite(y)) { xs.push(x); ys.push(y); }
+        };
+        const addRect = r => {
+          if (!r) return;
+          add(r.x, r.y);
+          add(r.x + r.w, r.y + r.h);
+        };
+
+        addRect(plotRect);
+        (circles || []).forEach(c => {
+          add(c.cx - c.r, c.cy - c.r);
+          add(c.cx + c.r, c.cy + c.r);
+        });
+        (segments || []).forEach(seg => (seg.shows || []).forEach(show => {
+          const m = showMatrix(show, seg);
+          const size = showFontSize(show, seg);
+          const adv = showAdvanceEstimate(show, seg);
+          const ux = size ? m[0] / size : 1;
+          const uy = size ? m[1] / size : 0;
+          add(m[4], m[5]);
+          add(m[4] + ux * adv, m[5] + uy * adv);
+        }));
+
+        if (!xs.length) return null;
+        const x0 = Math.min(...xs), x1 = Math.max(...xs);
+        const y0 = Math.min(...ys), y1 = Math.max(...ys);
+        return rectLike(x0, y0, x1 - x0, y1 - y0);
+      }
+
+      function inferEditableTextAlign(matrix, font, text, context) {
+        const oldText = cleanEditableText(text);
+        if (!oldText || !font || !font.widthOf) return 'left';
+
+        const oldW = Math.max(0, font.widthOf(oldText, 1));
+        const size = Math.max(1, Math.hypot(matrix[0], matrix[1]));
+        if (!isFinite(oldW) || oldW <= 0 || !isFinite(size)) return 'left';
+
+        const ux = matrix[0] / size;
+        const uy = matrix[1] / size;
+        const project = (x, y) => x * ux + y * uy;
+        const start = project(matrix[4], matrix[5]);
+        const center = project(matrix[4] + matrix[0] * oldW * 0.5, matrix[5] + matrix[1] * oldW * 0.5);
+        const end = project(matrix[4] + matrix[0] * oldW, matrix[5] + matrix[1] * oldW);
+        const anchors = [];
+        const addAnchor = (x, y) => {
+          if (isFinite(x) && isFinite(y)) anchors.push(project(x, y));
+        };
+        const ctx = context || {};
+
+        addTextAnchorSamples(ctx.pageRect || rectLike(0, 0, ctx.pageW || 0, ctx.pageH || 0), addAnchor);
+        addTextAnchorSamples(ctx.artworkRect, addAnchor);
+        addTextAnchorSamples(ctx.plotRect, addAnchor);
+
+        if (!anchors.length) return 'left';
+        const dist = v => anchors.reduce((d, a) => Math.min(d, Math.abs(v - a)), Infinity);
+        const leftD = dist(start);
+        const centerD = dist(center);
+        const rightD = dist(end);
+        const tol = Math.max(10, size * 1.35);
+
+        if (leftD <= tol && leftD < centerD * 0.65 && leftD <= rightD) return 'left';
+        if (rightD <= tol && rightD < centerD * 0.65 && rightD < leftD) return 'right';
+        if (centerD <= tol * 2.5 || centerD <= leftD || centerD <= rightD) return 'center';
+        return 'center';
       }
 
       function paddedRect(rect, pad) {
@@ -1334,6 +1426,15 @@
         return Math.max(size * 0.3, visible.length * size * 0.52);
       }
 
+      function looksLikeWordContinuation(prevText, nextText) {
+        const a = String(prevText || '').replace(/\s+/g, '');
+        const b = String(nextText || '').replace(/\s+/g, '');
+        if (!a || !b) return false;
+        if (/[-‐-―'’]$/.test(a) || /^['’]/.test(b)) return true;
+        if (/[A-Za-z]$/.test(a) && /^[a-z]/.test(b)) return true;
+        return false;
+      }
+
       function shouldStartNewEditableTextGroup(seg, group, show) {
         if (!group.length || !/\S/.test(String(show && show.text || ''))) return false;
 
@@ -1350,8 +1451,12 @@
         const along = dx * ux + dy * uy;
         const cross = Math.abs(dx * -uy + dy * ux);
         const expected = showAdvanceEstimate(prev, seg);
+        const gap = along - expected;
 
-        return cross > size * 0.9 || along < -size * 0.65 || along > expected + size * 1.25;
+        if (cross > size * 0.9 || along < -size * 0.65) return true;
+        if (gap <= size * 1.25) return false;
+        if (looksLikeWordContinuation(prev.text, show.text) && gap <= size * 2.4) return false;
+        return true;
       }
 
       function splitEditableTextShows(seg, shows) {
@@ -1519,6 +1624,7 @@
         const ctx = pdfDoc.context;
         const page = pdfDoc.getPage(0);
         const pageW = page.getWidth();
+        const pageH = page.getHeight();
 
         const contentsRef = page.node.get(PDFName.of('Contents'));
         const streamRefs = [];
@@ -1549,6 +1655,7 @@
 
         const { circles, plotRect, segments } = analyze(content);
         if (!plotRect) throw new Error('Could not locate the plot area (gradient clip rectangle) in the Illustrator file. Is this the right heat-map file?');
+        const artworkRect = inferArtworkRect(circles, segments, plotRect);
         log(`Plot area: x=${plotRect.x.toFixed(1)} y=${plotRect.y.toFixed(1)} w=${plotRect.w.toFixed(1)} h=${plotRect.h.toFixed(1)}`);
 
         const inPlot = (x, y) => x > plotRect.x - 2 && x < plotRect.x + plotRect.w + 2 && y > plotRect.y - 2 && y < plotRect.y + plotRect.h + 2;
@@ -1791,14 +1898,18 @@
         for (const item of staticTextCandidates) {
           const drawText = item.value;
           const hitText = drawText || item.text || 'Text';
+          const sourceFont = await fontForResource(item.fontRes, item.text || hitText, fbReg, 'Editable text source');
           const font = await fontForResource(item.fontRes, hitText, fbReg, 'Editable text');
-          const rect = textBoundsFor(font, hitText, item.matrix);
+          const align = inferEditableTextAlign(item.matrix, sourceFont, item.text || hitText, { pageW, pageH, plotRect, artworkRect });
+          const drawMatrix = alignedTextMatrix(item.matrix, sourceFont, item.text || hitText, font, hitText, align);
+          const rect = textBoundsFor(font, hitText, drawMatrix);
 
           editItems.push({
             type: 'static-text',
             key: item.key,
             value: item.text,
             text: item.text,
+            align,
             rect,
           });
 
@@ -1807,7 +1918,7 @@
             staticOut.push('BT');
             staticOut.push(`${fmt(item.fill[0])} ${fmt(item.fill[1])} ${fmt(item.fill[2])} rg`);
             staticOut.push(`${font.res} 1 Tf`);
-            staticOut.push(textMatrixToTm(item.matrix));
+            staticOut.push(textMatrixToTm(drawMatrix));
             staticOut.push(`${font.encode(drawText)} Tj`);
             staticOut.push('ET');
           }
@@ -2147,6 +2258,8 @@
         const pdfDoc = await PDFDocument.load(pdfBytes, { ignoreEncryption: true, updateMetadata: false });
         const ctx = pdfDoc.context;
         const page = pdfDoc.getPage(0);
+        const pageW = page.getWidth();
+        const pageH = page.getHeight();
         const lkp = o => (o instanceof PDFRef) ? ctx.lookup(o) : o;
         const contentsRef = page.node.get(PDFName.of('Contents'));
         const streamRefs = [];
@@ -2178,6 +2291,7 @@
 
         const { circles, plotRect, segments } = analyze(content);
         if (!plotRect) throw new Error('Could not locate the plot area in the Illustrator file.');
+        const artworkRect = inferArtworkRect(circles, segments, plotRect);
 
         const inPlot = (x, y) => x > plotRect.x - 2 && x < plotRect.x + plotRect.w + 2 && y > plotRect.y - 2 && y < plotRect.y + plotRect.h + 2;
         const bubbles = circles.filter(c => inPlot(c.cx, c.cy) && c.range);
@@ -2359,14 +2473,18 @@
         for (const item of staticTextCandidates) {
           const drawText = item.value;
           const hitText = drawText || item.text || 'Text';
+          const sourceFont = await fontForResource(item.fontRes, item.text || hitText, fbReg, 'Editable text source');
           const font = await fontForResource(item.fontRes, hitText, fbReg, 'Editable text');
-          const rect = textBoundsFor(font, hitText, item.matrix);
+          const align = inferEditableTextAlign(item.matrix, sourceFont, item.text || hitText, { pageW, pageH, plotRect, artworkRect });
+          const drawMatrix = alignedTextMatrix(item.matrix, sourceFont, item.text || hitText, font, hitText, align);
+          const rect = textBoundsFor(font, hitText, drawMatrix);
 
           editItems.push({
             type: 'static-text',
             key: item.key,
             value: item.text,
             text: item.text,
+            align,
             rect,
           });
 
@@ -2375,7 +2493,7 @@
             staticOut.push('BT');
             staticOut.push(`${fmt(item.fill[0])} ${fmt(item.fill[1])} ${fmt(item.fill[2])} rg`);
             staticOut.push(`${font.res} 1 Tf`);
-            staticOut.push(textMatrixToTm(item.matrix));
+            staticOut.push(textMatrixToTm(drawMatrix));
             staticOut.push(`${font.encode(drawText)} Tj`);
             staticOut.push('ET');
           }
@@ -3321,6 +3439,8 @@
       }
 
       function renderEditLayer(items, vp) {
+        if (activePreviewEdit) return;
+
         const layer = $('editLayer');
         const c = $('pvCanvas');
 
@@ -3390,6 +3510,7 @@
         input.style.top = top + 'px';
         input.style.width = Math.max(width, item.type === 'risk-name' || item.type === 'static-text' ? 180 : 80) + 'px';
         input.style.minHeight = Math.max(height, 24) + 'px';
+        if (item.align) input.style.textAlign = item.align;
 
         if (item.type === 'risk-num') {
           input.type = 'number';
@@ -3397,8 +3518,12 @@
         }
 
         const stopInputEvent = e => e.stopPropagation();
+        const isInputEvent = e => {
+          const path = e.composedPath ? e.composedPath() : [];
+          return e.target === input || input.contains(e.target) || path.includes(input);
+        };
         const finishFromOutside = e => {
-          if (done || e.target === input) return;
+          if (done || isInputEvent(e)) return;
           finish(true);
         };
 
