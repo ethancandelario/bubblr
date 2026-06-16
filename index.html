@@ -611,7 +611,8 @@
   <main>
     <div class="startPrompt">Drop files here to get started.</div>
     <div class="bar">
-      <div class="drop" id="dropAi" title="The base design file. (.ai with PDF compatibility, or .pdf)">
+      <div class="drop" id="dropAi"
+        title="A design file containing the base graph and legend. (PDF compatible .ai, or .pdf)">
         <input type="file" id="fileAi" accept=".ai,.pdf,application/pdf">
         <b>Design</b><span id="aiLabel">.ai / .pdf</span>
       </div>
@@ -620,7 +621,7 @@
         <b>Spreadsheet</b><span id="xlLabel">.xlsx / .xlsm</span>
       </div>
       <div class="drop" id="dropFont"
-        title="Optional .ttf/.otf fonts, used where the file's embedded fonts can't cover new text. Uploaded fonts are matched to the font names used in the Illustrator file.">
+        title="Optional .ttf/.otf fonts, used where the design file's embedded fonts can't cover new text. Uploaded fonts are matched to the font names used in the Illustrator file.">
         <input type="file" id="fileFont" accept=".ttf,.otf" multiple>
         <b>Fonts</b><span id="fontLabel">.ttf / .otf</span>
       </div>
@@ -769,12 +770,12 @@
   </main>
 
   <script>
-    /* ============================================================
-     * Parses an Illustrator (.ai, PDF-compatible) heat-map file,
+    /* 
+     * Parses an Illustrator (.ai, PDF-compatible) file,
      * removes the existing bubbles / bubble numbers / legend rows,
      * and redraws them from spreadsheet data.
      * Requires: pdf-lib (PDFLib), pako, SheetJS (XLSX).
-     * ============================================================ */
+     */
     (function (root, factory) {
       let PDFLibRef, pakoRef;
       if (typeof PDFLib !== 'undefined') PDFLibRef = PDFLib;
@@ -790,6 +791,13 @@
       const { PDFDocument, PDFName, PDFDict, PDFArray, PDFRef, PDFRawStream, PDFString, PDFNumber, StandardFonts, rgb } = PDFLib;
 
       /* ---------------- spreadsheet parsing ---------------- */
+      /**
+       * Extracts normalized bubble rows from a SheetJS workbook.
+       * @param {object} XLSX SheetJS namespace.
+       * @param {object} workbook SheetJS workbook to scan.
+       * @param {{sheetName?: string}=} parseOpts Optional worksheet selection.
+       * @returns {{sheetName: string, sourceType: string, headerRow: number, bubbles: object[]}}
+       */
       function parseBubblesFromWorkbook(XLSX, workbook, parseOpts) {
         parseOpts = parseOpts || {};
         const num = v => (typeof v === 'number' && isFinite(v)) ? v : (typeof v === 'string' && v.trim() !== '' && isFinite(+v) ? +v : null);
@@ -936,6 +944,11 @@
         throw new Error('Could not find bubble data. Expected columns like Bubble/Risk, X Axis - Likelihood or Likelihood, Y Axis - Impact or Impact, and Velocity.');
       }
 
+      /**
+       * Assigns display ranks in-place, using score when available and row number otherwise.
+       * @param {object[]} bubbles Mutable bubble records.
+       * @returns {object[]} The same bubble array for chaining.
+       */
       function rankBubbles(bubbles) {
         const ranked = bubbles.slice().sort((a, b) => (b.score ?? -Infinity) - (a.score ?? -Infinity));
         ranked.forEach((r, i) => { r.rank = (r.score != null) ? i + 1 : r.num; });
@@ -943,6 +956,11 @@
       }
 
       /* ---------------- content-stream tokenizer ---------------- */
+      /**
+       * Tokenizes a PDF content stream while preserving source offsets for later removals.
+       * @param {string} s Latin-1 decoded content stream.
+       * @returns {object[]} PDF content tokens with raw text and source offsets.
+       */
       function tokenize(s) {
         const toks = []; let i = 0; const n = s.length;
         const isWS = c => c === ' ' || c === '\n' || c === '\r' || c === '\t' || c === '\f' || c === '\x00';
@@ -985,6 +1003,11 @@
         return toks;
       }
 
+      /**
+       * Groups tokens into operator calls with their operands.
+       * @param {object[]} toks Tokens from {@link tokenize}.
+       * @returns {object[]} PDF content operations with source ranges.
+       */
       function toOps(toks) {
         const ops = []; let args = []; let argStart = -1;
         for (let i = 0; i < toks.length; i++) {
@@ -1069,6 +1092,11 @@
       };
 
       /* ---------------- analyze a content stream ---------------- */
+      /**
+       * Finds drawable circles, text runs, plot candidates, and pickable regions in a stream.
+       * @param {string} content Latin-1 decoded page content.
+       * @returns {{ops: object[], circles: object[], clipRects: object[], plotRect: object|null, segments: object[], regions: object[], plotCandidates: object[]}}
+       */
       function analyze(content) {
         const ops = toOps(tokenize(content));
         const st = () => ({ ctm: IDENT.slice(), fill: [0, 0, 0], stroke: [0, 0, 0], lw: 1 });
@@ -1343,6 +1371,12 @@
         return { weight, italic: /italic|oblique/.test(n), bold: weight >= 600 };
       }
 
+      /**
+       * Scores how closely an uploaded font resembles one or more source font names.
+       * @param {object} file Uploaded font record with browser name and optional parsed metadata.
+       * @param {string[]} targetNames Source PDF font names to match.
+       * @returns {number} Higher scores indicate better family/style matches.
+       */
       function scoreUploadedFontMatch(file, targetNames) {
         const candNames = [
           file.name,
@@ -1396,6 +1430,12 @@
         return null;
       }
 
+      /**
+       * Creates a fontkit font from bytes, accepting either a Uint8Array or sliced ArrayBuffer.
+       * @param {object|null} fontkit Optional fontkit namespace.
+       * @param {Uint8Array|null} bytes Font bytes.
+       * @returns {object|null}
+       */
       function tryCreateFontkitFont(fontkit, bytes) {
         if (!fontkit || !fontkit.create || !bytes) return null;
 
@@ -1411,6 +1451,11 @@
         return null;
       }
 
+      /**
+       * Builds a cached text-bounds measurer from a fontkit font.
+       * @param {object|null} fontkitFont Parsed fontkit font.
+       * @returns {Function|null} Function returning glyph bounds for text at a font size.
+       */
       function makeFontkitBoundsProvider(fontkitFont) {
         if (!fontkitFont || typeof fontkitFont.layout !== 'function') return null;
 
@@ -1511,6 +1556,14 @@
         return null;
       }
 
+      /**
+       * Wraps an existing PDF font resource with the width, encoding, and coverage API used here.
+       * @param {object} ctx pdf-lib document context.
+       * @param {object} fontDict PDF font dictionary or reference.
+       * @param {string} resName Resource name used in content streams.
+       * @param {object|null} fontkit Optional fontkit namespace for tighter glyph bounds.
+       * @returns {object|null} Font adapter, or null when the source font cannot be reused.
+       */
       function makeOriginalFontAdapter(ctx, fontDict, resName, fontkit) {
         try {
           const lk = o => (o instanceof PDFRef) ? ctx.lookup(o) : o;
@@ -1590,6 +1643,15 @@
         }
       }
 
+      /**
+       * Wraps a pdf-lib embedded font with the shared font adapter API.
+       * @param {object} font pdf-lib font instance.
+       * @param {string} resName Resource name to emit in content streams.
+       * @param {string} label Human-readable font label for logs.
+       * @param {string=} kind Adapter kind, such as embedded or uploaded.
+       * @param {object|null=} fontkitFont Optional fontkit font for measured bounds.
+       * @returns {object} Font adapter used by drawing and measurement code.
+       */
       function makePdfLibFontAdapter(font, resName, label, kind, fontkitFont) {
         const boundsOf = makeFontkitBoundsProvider(fontkitFont);
         const capHeightRatio = (() => {
@@ -1710,6 +1772,13 @@
         addAnchor(cx, y1);
       }
 
+      /**
+       * Estimates the full source-artwork bounds from plot, bubble, and text geometry.
+       * @param {object[]} circles Circle paint operations from the source stream.
+       * @param {object[]} segments Text segments from the source stream.
+       * @param {object|null} plotRect Detected plot rectangle.
+       * @returns {{x: number, y: number, w: number, h: number}|null}
+       */
       function inferArtworkRect(circles, segments, plotRect) {
         const xs = [], ys = [];
         const add = (x, y) => {
@@ -1742,6 +1811,14 @@
         return rectLike(x0, y0, x1 - x0, y1 - y0);
       }
 
+      /**
+       * Chooses left, center, or right alignment for replacing an existing editable label.
+       * @param {number[]} matrix Source text matrix.
+       * @param {object} font Font adapter used to measure the source text.
+       * @param {string} text Source label text.
+       * @param {object=} context Page, artwork, and plot bounds used as alignment anchors.
+       * @returns {string} One of left, center, or right.
+       */
       function inferEditableTextAlign(matrix, font, text, context) {
         const oldText = cleanEditableText(text);
         if (!oldText || !font || !font.widthOf) return 'left';
@@ -1834,6 +1911,12 @@
         return true;
       }
 
+      /**
+       * Splits adjacent PDF text-show operations into editable label groups.
+       * @param {object} seg Parent text segment.
+       * @param {object[]} shows Text-show operations that survived automatic removals.
+       * @returns {object[][]} Groups that should be edited as single labels.
+       */
       function splitEditableTextShows(seg, shows) {
         const groups = [];
         let group = [];
@@ -1875,6 +1958,11 @@
         return { 1: r[1], 3: r[3], 5: r[5] };
       }
 
+      /**
+       * Derives velocity-size radii from source bubble artwork, falling back to defaults.
+       * @param {object[]} bubbles Source bubble circle operations.
+       * @returns {{1: number, 3: number, 5: number}}
+       */
       function inferRadiiFromBubbles(bubbles) {
         const rs = [...new Set((bubbles || []).map(b => Math.round(b.r * 2) / 2))]
           .filter(r => isFinite(r) && r > 0)
@@ -1887,6 +1975,13 @@
         return cloneRadii(DEFAULTS.radii);
       }
 
+      /**
+       * Applies user-entered min/max bubble diameters while preserving source mid-size ratio.
+       * @param {object} style Mutable style object.
+       * @param {object} opts Generation options from the UI.
+       * @param {object} sourceRadii Radii inferred before overrides.
+       * @returns {void}
+       */
       function applyBubbleSizeOverride(style, opts, sourceRadii) {
         const minD = parseFloat(opts.bubbleMinDiameter);
         const maxD = parseFloat(opts.bubbleMaxDiameter);
@@ -1939,6 +2034,13 @@
         return { numSeg, legendNamesSeg };
       }
 
+      /**
+       * Infers bubble colors, stroke width, radii, and text style from the source artwork.
+       * @param {object[]} bubbles Circle paint operations found inside the plot.
+       * @param {object[]} segments Text segments found in the source stream.
+       * @param {object} plotRect Detected plot rectangle in PDF points.
+       * @returns {object} Style values used when redrawing the heat map.
+       */
       function inferBubbleStyle(bubbles, segments, plotRect) {
         const style = JSON.parse(JSON.stringify(DEFAULTS));
         const fills = (bubbles || []).filter(b => /^f/i.test(b.paint) || /^b/i.test(b.paint));
@@ -1971,6 +2073,12 @@
         return style;
       }
 
+      /**
+       * Applies user-entered color, stroke, and label-size overrides to inferred style.
+       * @param {object} style Mutable style object.
+       * @param {object} opts Generation options from the UI.
+       * @returns {void}
+       */
       function applyBubbleStyleOverrides(style, opts) {
         ['topFill', 'topStroke', 'stdFill', 'stdStroke', 'numColor', 'legendColor'].forEach(key => {
           const color = cloneRgb(opts[key]);
@@ -1985,6 +2093,13 @@
       }
 
       /* ---------------- main generation ---------------- */
+      /**
+       * Rewrites the first PDF/AI page with new bubbles, legend rows, and optional text edits.
+       * @param {Uint8Array} pdfBytes Source PDF-compatible Illustrator bytes.
+       * @param {object[]} bubbles Bubble data with name, impact, likelihood, velocity, and rank.
+       * @param {object=} opts Generation options and optional font/style overrides.
+       * @returns {Promise<{bytes: Uint8Array, info: object}>} Updated PDF bytes plus detected metadata.
+       */
       async function generate(pdfBytes, bubbles, opts) {
         opts = Object.assign({ topN: 10, axisMin: 0, axisMax: 6, dateText: null, bubbleMinDiameter: null, bubbleMaxDiameter: null, topFill: null, topStroke: null, stdFill: null, stdStroke: null, strokeW: null, numSize: null, numColor: null, legendColor: null, staticTextEdits: null, fontFiles: null, fontkit: null, log: () => { } }, opts || {});
         const log = opts.log;
@@ -2799,6 +2914,12 @@
       }
 
 
+      /**
+       * Removes generated-data artwork while preserving editable static text for source previews.
+       * @param {Uint8Array} pdfBytes Source PDF-compatible Illustrator bytes.
+       * @param {object=} opts Preview options, text edits, and font overrides.
+       * @returns {Promise<{bytes: Uint8Array, info: object}>} Cleaned preview bytes and edit handles.
+       */
       async function generateEmptyDataPreview(pdfBytes, opts) {
         opts = Object.assign({ dateText: null, staticTextEdits: null, fontFiles: null, fontkit: null, log: () => { } }, opts || {});
         const log = opts.log;
@@ -3116,6 +3237,11 @@
         };
       }
 
+      /**
+       * Reads source artwork metadata used to seed controls and region-picking candidates.
+       * @param {Uint8Array} pdfBytes Source PDF-compatible Illustrator bytes.
+       * @returns {Promise<object>} Detected plot, style, bubble count, date, regions, and page size.
+       */
       async function inspect(pdfBytes) {
         const pdfDoc = await PDFDocument.load(pdfBytes, { ignoreEncryption: true, updateMetadata: false });
         const ctx = pdfDoc.context;
@@ -3414,6 +3540,11 @@
         });
       }
 
+      /**
+       * Splits dropped/selected files by type and loads them in dependency-safe order.
+       * @param {FileList|File[]} fileList Files from an input or drop event.
+       * @returns {Promise<void>}
+       */
       async function routeFiles(fileList) {
         const fileArray = [...fileList];
         const aiFile = fileArray.find(isAiFile);
@@ -3459,6 +3590,12 @@
         routeFiles(e.dataTransfer.files);
       });
 
+      /**
+       * Reads display and matching metadata from an uploaded font when fontkit is available.
+       * @param {Uint8Array} bytes Font file bytes.
+       * @param {string} fallbackName Filename to use when metadata cannot be parsed.
+       * @returns {object} Font metadata used for labels and matching.
+       */
       function readFontMeta(bytes, fallbackName) {
         if (!window.fontkit || !window.fontkit.create) return { fullName: fallbackName };
 
@@ -3509,6 +3646,10 @@
         sel.value = selected && workbook.SheetNames.includes(selected) ? selected : '';
       }
 
+      /**
+       * Parses the selected worksheet and updates table/UI state with stable bubble IDs.
+       * @returns {object|null} Parsed workbook result, or null when no workbook is loaded.
+       */
       function parseSelectedWorkbookSheet() {
         if (!workbook) return null;
 
@@ -3539,6 +3680,10 @@
         return parsed;
       }
 
+      /**
+       * Renders the source artwork with generated bubble data removed for a clean baseline preview.
+       * @returns {Promise<void>}
+       */
       async function renderSourcePreview() {
         if (!aiBytes || !window.pdfjsLib) return;
 
@@ -3567,6 +3712,11 @@
       }
 
       /* ---------- file handlers ---------- */
+      /**
+       * Loads and inspects a PDF-compatible Illustrator file, seeding style and region controls.
+       * @param {File} f Illustrator or PDF file from the browser.
+       * @returns {Promise<void>}
+       */
       async function loadIllustratorFile(f) {
         aiLoading = true;
         $('pv').classList.add('busy', 'loading');
@@ -3631,6 +3781,11 @@
         }
       }
 
+      /**
+       * Loads a spreadsheet, preserves previous data on read failure, and parses bubble rows.
+       * @param {File} f Spreadsheet file from the browser.
+       * @returns {Promise<void>}
+       */
       async function loadSpreadsheetFile(f) {
         const prevWorkbook = workbook;
         const prevWorkbookName = workbookName;
@@ -3688,6 +3843,11 @@
         }
       }
 
+      /**
+       * Reads optional uploaded font files and stores metadata for later PDF embedding.
+       * @param {File[]} files Font files selected by the user.
+       * @returns {Promise<void>}
+       */
       async function loadFontFiles(files) {
         if (!window.fontkit) {
           console.warn('[bubblr] fontkit unavailable. custom fonts cannot be embedded.');
@@ -3776,6 +3936,10 @@
         }
       });
 
+      /**
+       * Collects current form values into BubbleMapCore generation options.
+       * @returns {object} Normalized options, with blank controls mapped to auto/default values.
+       */
       const opts = () => ({
         topN: Math.max(0, parseInt($('optTopN').value || '10', 10)),
         axisMin: optionNumber('optMin', 0),
@@ -3805,6 +3969,10 @@
         { k: 'score', cls: 'n', step: '0.1' },
       ];
 
+      /**
+       * Rebuilds the editable bubble data table from the current in-memory rows.
+       * @returns {void}
+       */
       function renderTable() {
         const has = !!(bubbles && bubbles.length);
         const showMessage = !!dataParseMessage && !!workbook && !has;
@@ -3909,12 +4077,22 @@
       let previewRevealId = 0;
       let activePreviewEdit = null;
 
+      /**
+       * Debounces expensive PDF regeneration after UI or data changes.
+       * @returns {void}
+       */
       function schedule() {
         rememberAdvancedOpen();
         clearTimeout(timer);
         timer = setTimeout(regen, 350);
       }
 
+      /**
+       * Generates output, retrying without uploaded fonts if custom font embedding fails.
+       * @param {object[]} valid Bubble rows already filtered for required values.
+       * @param {object} o Generation options.
+       * @returns {Promise<{bytes: Uint8Array, info: object}>}
+       */
       async function generateWithFontFallback(valid, o) {
         try {
           return await BubbleMapCore.generate(aiBytes, valid, {
@@ -3935,6 +4113,10 @@
         }
       }
 
+      /**
+       * Runs the full live-preview pipeline: validate data, generate bytes, render PDF preview.
+       * @returns {Promise<void>}
+       */
       async function regen() {
         updateLayout();
 
@@ -3982,6 +4164,12 @@
         }
       }
 
+      /**
+       * Paints generated PDF bytes into the preview canvas and rebuilds editable hit targets.
+       * @param {Uint8Array} bytes Generated or source PDF bytes.
+       * @param {object[]} editItems PDF-space edit regions returned by BubbleMapCore.
+       * @returns {Promise<void>}
+       */
       async function renderPreview(bytes, editItems) {
         if (!window.pdfjsLib) return;
 
@@ -4011,6 +4199,11 @@
         }
       }
 
+      /**
+       * Replaces the visible preview canvas with a reduced-motion-aware reveal animation.
+       * @param {HTMLCanvasElement} next Fully rendered preview canvas.
+       * @returns {Promise<void>}
+       */
       function revealPreviewCanvas(next) {
         const live = $('pvCanvas');
         const ctx = live.getContext('2d');
@@ -4102,6 +4295,12 @@
         });
       }
 
+      /**
+       * Places transparent edit buttons over rendered PDF text regions.
+       * @param {object[]} items Edit handles in PDF coordinates.
+       * @param {object} vp PDF.js viewport used to convert PDF coordinates to screen space.
+       * @returns {void}
+       */
       function renderEditLayer(items, vp) {
         if (activePreviewEdit) return;
         if (pickMode) return;
@@ -4158,6 +4357,12 @@
         return r.name ?? '';
       }
 
+      /**
+       * Opens an inline input over a preview hit target and commits on Enter/outside click.
+       * @param {HTMLElement} hit Existing preview hit target.
+       * @param {object} item Edit handle describing the target data.
+       * @returns {void}
+       */
       function startPreviewEdit(hit, item) {
         const layer = $('editLayer');
         const input = document.createElement('input');
@@ -4232,6 +4437,12 @@
         });
       }
 
+      /**
+       * Applies a preview edit to form state, static text edits, or bubble data.
+       * @param {object} item Edit handle returned by preview generation.
+       * @param {string|number} value User-entered value.
+       * @returns {void}
+       */
       function commitPreviewEdit(item, value) {
         if (item.type === 'date') {
           $('optDate').value = String(value || '').trim();
@@ -4278,6 +4489,11 @@
           .replace(/>/g, '&gt;');
       }
 
+      /**
+       * Converts generated PDF bytes to SVG using PDF.js vector output when available.
+       * @param {Uint8Array} bytes PDF bytes to export.
+       * @returns {Promise<string>} Serialized SVG markup.
+       */
       async function pdfBytesToVectorSvg(bytes) {
         if (!window.pdfjsLib || !pdfjsLib.SVGGraphics) {
           throw new Error('PDF.js SVGGraphics is unavailable.');
@@ -4305,6 +4521,11 @@
         }
       }
 
+      /**
+       * Renders a PDF page to PNG and wraps it in SVG when vector SVG export is unavailable.
+       * @param {Uint8Array} bytes PDF bytes to export.
+       * @returns {Promise<string>} Serialized SVG markup containing a raster image.
+       */
       async function pdfBytesToRasterSvg(bytes) {
         if (!window.pdfjsLib) {
           throw new Error('SVG export requires PDF.js, which is unavailable in this browser build.');
@@ -4339,6 +4560,11 @@
         }
       }
 
+      /**
+       * Converts PDF bytes to SVG, falling back to an embedded raster image if needed.
+       * @param {Uint8Array} bytes PDF bytes to export.
+       * @returns {Promise<string>} Serialized SVG markup.
+       */
       async function pdfBytesToSvg(bytes) {
         try {
           return await pdfBytesToVectorSvg(bytes);
@@ -4354,6 +4580,12 @@
         });
       }
 
+      /**
+       * Renders PDF bytes to a PNG or JPEG blob for raster export.
+       * @param {Uint8Array} bytes PDF bytes to render.
+       * @param {string} type Browser image MIME type.
+       * @returns {Promise<Blob>}
+       */
       async function pdfBytesToRasterBlob(bytes, type) {
         if (!window.pdfjsLib) {
           throw new Error('PNG/JPG export requires PDF.js, which is unavailable in this browser build.');
@@ -4389,6 +4621,12 @@
 
       window.addEventListener('resize', requestPreviewOverlaySync);
 
+      /**
+       * Produces the downloadable blob for the selected export format.
+       * @param {Uint8Array} bytes Latest generated PDF bytes.
+       * @param {string} format One of pdf, ai, svg, png, or jpg.
+       * @returns {Promise<Blob>}
+       */
       async function blobForExportFormat(bytes, format) {
         switch (format) {
           case 'pdf':
@@ -4441,6 +4679,10 @@
       });
 
       /* ---------- plot region picker ---------- */
+      /**
+       * Updates the region-picker controls to reflect auto/custom plot-region state.
+       * @returns {void}
+       */
       function updateRegionReadout() {
         const readout = $('regionReadout');
         const resetBtn = $('btnRegionReset');
@@ -4470,6 +4712,11 @@
         return close(a.x, b.x) && close(a.y, b.y) && close(a.w, b.w) && close(a.h, b.h);
       }
 
+      /**
+       * Converts a pointer event over the preview canvas into PDF page coordinates.
+       * @param {PointerEvent|MouseEvent} e Pointer event from the picker overlay.
+       * @returns {{px: number, py: number}|null}
+       */
       function pdfPointFromEvent(e) {
         const vp = previewState.viewport;
         const c = $('pvCanvas');
@@ -4482,6 +4729,12 @@
         return { px: p[0], py: p[1] };
       }
 
+      /**
+       * Finds the smallest candidate region containing the given PDF point.
+       * @param {number} px PDF x coordinate.
+       * @param {number} py PDF y coordinate.
+       * @returns {object|null}
+       */
       function regionAtPoint(px, py) {
         let best = null;
         for (const rg of pickRegions) {
@@ -4561,6 +4814,10 @@
         if (e.key === 'Escape') { e.preventDefault(); exitPickMode(); }
       }
 
+      /**
+       * Enables plot-region picking over the preview canvas.
+       * @returns {void}
+       */
       function enterPickMode() {
         if (!aiBytes || !previewState.viewport) return;
         pickMode = true;
@@ -4580,6 +4837,10 @@
 
       function onPickLeave() { showPickBox(null); }
 
+      /**
+       * Disables plot-region picking and restores normal preview edit overlays.
+       * @returns {void}
+       */
       function exitPickMode() {
         if (!pickMode) { updateRegionReadout(); return; }
         pickMode = false;
