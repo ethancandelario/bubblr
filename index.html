@@ -2351,13 +2351,16 @@
           return null;
         }
 
-        async function fontForResource(res, text, fallback, label) {
+        let usedFallbackFontsForText = false;
+
+        async function fontForResource(res, text, fallback, label, trackFallback = true) {
           const original = origAdapter(res);
           if (original && original.canRender(text)) return original;
 
           const matched = await matchedUploadedFont(original, text, label);
           if (matched) return matched;
 
+          if (trackFallback) usedFallbackFontsForText = true;
           return fallback;
         }
 
@@ -2398,7 +2401,7 @@
         for (const item of staticTextCandidates) {
           const drawText = item.value;
           const hitText = drawText || item.text || 'Text';
-          const sourceFont = await fontForResource(item.fontRes, item.text || hitText, fbReg, 'Editable text source');
+          const sourceFont = await fontForResource(item.fontRes, item.text || hitText, fbReg, 'Editable text source', false);
           const font = await fontForResource(item.fontRes, hitText, fbReg, 'Editable text');
           const align = inferEditableTextAlign(item.matrix, sourceFont, item.text || hitText, { pageW, pageH, plotRect, artworkRect });
           const drawMatrix = alignedTextMatrix(item.matrix, sourceFont, item.text || hitText, font, hitText, align);
@@ -2770,7 +2773,7 @@
           const oldDateText = dateSeg.shows.map(s => s.text).join('').trim();
           const currentDateText = opts.dateText || oldDateText;
           const dateMatrix = showMatrix(dateSeg.shows[0], dateSeg).slice();
-          const sourceDateFont = await fontForResource(dateSeg.fontRes, oldDateText || currentDateText || 'Date', fbBold, 'Date');
+          const sourceDateFont = await fontForResource(dateSeg.fontRes, oldDateText || currentDateText || 'Date', fbBold, 'Date', false);
           const sourceRect = textBoundsFor(sourceDateFont, oldDateText || currentDateText || 'Date', dateMatrix);
           let editRect = paddedRect(sourceRect, 8);
 
@@ -2908,7 +2911,8 @@
             plotRect,
             style,
             oldDate: dateSeg ? dateSeg.shows.map(s => s.text).join('').trim() : null,
-            editItems
+            editItems,
+            usedFallbackFontsForText
           }
         };
       }
@@ -3332,6 +3336,7 @@
       let lastValidSheetSelection = '';
       let bubbles = null;
       let lastBytes = null;
+      let exportUsesFallbackFontsForText = false;
       let staticTextEdits = {};
       let plotRegionOverride = null;   /* {x,y,w,h} in PDF points, or null for auto-detect */
       let autoPlotRegion = null;       /* auto-detected plot region in PDF points */
@@ -3704,6 +3709,7 @@
       function clearParsedData(message) {
         bubbles = null;
         lastBytes = null;
+        exportUsesFallbackFontsForText = false;
         dataParseMessage = message || 'No parseable bubble data on this worksheet.';
         $('btnDl').disabled = true;
         renderTable();
@@ -3730,6 +3736,7 @@
           aiName = f.name;
           staticTextEdits = {};
           lastBytes = null;
+          exportUsesFallbackFontsForText = false;
           plotRegionOverride = null;
           autoPlotRegion = null;
           pickRegions = [];
@@ -3764,6 +3771,7 @@
           aiBytes = null;
           aiName = null;
           lastBytes = null;
+          exportUsesFallbackFontsForText = false;
           plotRegionOverride = null;
           autoPlotRegion = null;
           pickRegions = [];
@@ -4123,6 +4131,7 @@
         if (!hasCoreAssets()) {
           $('btnDl').disabled = true;
           lastBytes = null;
+          exportUsesFallbackFontsForText = false;
           if (aiBytes) await renderSourcePreview();
           else $('editLayer').innerHTML = '';
           return;
@@ -4148,6 +4157,7 @@
           const { bytes, info } = await generateWithFontFallback(valid, o);
 
           lastBytes = bytes;
+          exportUsesFallbackFontsForText = !!info.usedFallbackFontsForText;
           $('btnDl').disabled = false;
 
           await renderPreview(bytes, info.editItems || []);
@@ -4670,6 +4680,14 @@
         const filename = `${outputBaseName()}.${format}`;
 
         try {
+          if (exportUsesFallbackFontsForText) {
+            const ok = confirm(
+              'Some updated text could not be rendered with the fonts embedded in the design file. ' + '\n' +
+              'Default fonts will be used.\n\nExport anyway?'
+            );
+            if (!ok) return;
+          }
+
           downloadBlob(await blobForExportFormat(lastBytes, format), filename);
           log(`Downloaded "${filename}".`);
         } catch (err) {
