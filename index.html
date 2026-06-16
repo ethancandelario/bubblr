@@ -1167,7 +1167,134 @@
         return best;
       }
 
-      function makeOriginalFontAdapter(ctx, fontDict, resName) {
+      const isFiniteNumber = n => typeof n === 'number' && isFinite(n);
+
+      function bboxCoord(box, keys) {
+        for (const key of keys) {
+          const raw = box && box[key];
+          if (raw == null) continue;
+          const n = Number(raw);
+          if (isFinite(n)) return n;
+        }
+        return null;
+      }
+
+      function tryCreateFontkitFont(fontkit, bytes) {
+        if (!fontkit || !fontkit.create || !bytes) return null;
+
+        const views = [
+          bytes,
+          bytes.buffer && bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength)
+        ].filter(Boolean);
+
+        for (const data of views) {
+          try { return fontkit.create(data); } catch (e) { /* try the next representation */ }
+        }
+
+        return null;
+      }
+
+      function makeFontkitBoundsProvider(fontkitFont) {
+        if (!fontkitFont || typeof fontkitFont.layout !== 'function') return null;
+
+        const units = Number(fontkitFont.unitsPerEm) || 1000;
+        const cache = new Map();
+
+        return (text, size) => {
+          const str = String(text ?? '');
+          const key = str + '\0' + size;
+          if (cache.has(key)) return cache.get(key);
+
+          try {
+            if (typeof fontkitFont.hasGlyphForCodePoint === 'function') {
+              for (const ch of str) {
+                if (!fontkitFont.hasGlyphForCodePoint(ch.codePointAt(0))) {
+                  cache.set(key, null);
+                  return null;
+                }
+              }
+            }
+
+            const run = fontkitFont.layout(str);
+            const glyphs = run && run.glyphs || [];
+            const positions = run && run.positions || [];
+            let penX = 0, penY = 0;
+            let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+
+            for (let i = 0; i < glyphs.length; i++) {
+              const glyph = glyphs[i];
+              const pos = positions[i] || {};
+              const box = glyph && (glyph.bbox || glyph.cbox);
+              const bx0 = bboxCoord(box, ['minX', 'xMin', 'x1']);
+              const by0 = bboxCoord(box, ['minY', 'yMin', 'y1']);
+              const bx1 = bboxCoord(box, ['maxX', 'xMax', 'x2']);
+              const by1 = bboxCoord(box, ['maxY', 'yMax', 'y2']);
+              const gx = penX + (Number(pos.xOffset) || 0);
+              const gy = penY + (Number(pos.yOffset) || 0);
+
+              if ([bx0, by0, bx1, by1].every(isFiniteNumber) && bx1 > bx0 && by1 > by0) {
+                x0 = Math.min(x0, gx + bx0);
+                y0 = Math.min(y0, gy + by0);
+                x1 = Math.max(x1, gx + bx1);
+                y1 = Math.max(y1, gy + by1);
+              }
+
+              penX += Number(pos.xAdvance) || Number(glyph && glyph.advanceWidth) || 0;
+              penY += Number(pos.yAdvance) || 0;
+            }
+
+            if (![x0, y0, x1, y1].every(isFiniteNumber) || !(x1 > x0) || !(y1 > y0)) {
+              cache.set(key, null);
+              return null;
+            }
+
+            const scale = size / units;
+            const bounds = {
+              x0: x0 * scale,
+              y0: y0 * scale,
+              x1: x1 * scale,
+              y1: y1 * scale,
+              advance: penX * scale,
+            };
+
+            cache.set(key, bounds);
+            return bounds;
+          } catch (e) {
+            cache.set(key, null);
+            return null;
+          }
+        };
+      }
+
+      function fontkitFontFromDescriptor(lk, desc, fontkit) {
+        if (!desc || !fontkit || !fontkit.create) return null;
+
+        for (const key of ['FontFile2', 'FontFile3', 'FontFile']) {
+          const stream = lk(desc.get(PDFName.of(key)));
+          if (!stream) continue;
+
+          const raw = stream.contents || stream.getContents?.();
+          if (!raw) continue;
+
+          const filter = stream.dict && stream.dict.get(PDFName.of('Filter'));
+          const fname = filter && filter.asString ? filter.asString() : (filter ? String(filter) : '');
+          let bytes = null;
+
+          try {
+            if (/Flate/.test(fname)) bytes = pako.inflate(raw);
+            else if (!filter) bytes = raw;
+          } catch (e) {
+            bytes = null;
+          }
+
+          const font = tryCreateFontkitFont(fontkit, bytes);
+          if (font) return font;
+        }
+
+        return null;
+      }
+
+      function makeOriginalFontAdapter(ctx, fontDict, resName, fontkit) {
         try {
           const lk = o => (o instanceof PDFRef) ? ctx.lookup(o) : o;
           const d = lk(fontDict);
@@ -1193,6 +1320,20 @@
             else if (cs && cs.value) charset = new Set(String(cs.value).split('/').filter(Boolean));
           }
 
+          const descriptorNumber = key => {
+            const obj = desc ? lk(desc.get(PDFName.of(key))) : null;
+            return obj && obj.asNumber ? obj.asNumber() : null;
+          };
+          const capHeight = descriptorNumber('CapHeight');
+          const ascent = descriptorNumber('Ascent');
+          const capHeightUnits = isFiniteNumber(capHeight) && capHeight > 0
+            ? capHeight
+            : (isFiniteNumber(ascent) && ascent > 0 ? ascent * 0.86 : null);
+          const capHeightRatio = isFiniteNumber(capHeightUnits)
+            ? Math.max(0.58, Math.min(0.84, capHeightUnits / 1000))
+            : null;
+          const boundsOf = makeFontkitBoundsProvider(fontkitFontFromDescriptor(lk, desc, fontkit));
+
           const fc = firstChar ? firstChar.asNumber() : 0;
           const widths = [];
           if (widthsObj && widthsObj.asArray) widthsObj.asArray().forEach((w, i) => { widths[fc + i] = lk(w).asNumber(); });
@@ -1217,6 +1358,8 @@
             label: displayName,
             fontName: displayName,
             targetNames: [baseFontName, descriptorFontName, resName].filter(Boolean),
+            capHeightRatio,
+            boundsOf,
             canRender: txt => [...String(txt ?? '')].every(covers),
             widthOf: (txt, size) => [...String(txt ?? '')].reduce((s, ch) => s + ((widths[codeFor(ch)] || 520) / 1000) * size, 0),
             encode: txt => '(' + [...String(txt ?? '')].map(ch => {
@@ -1230,12 +1373,27 @@
         }
       }
 
-      function makePdfLibFontAdapter(font, resName, label, kind) {
+      function makePdfLibFontAdapter(font, resName, label, kind, fontkitFont) {
+        const boundsOf = makeFontkitBoundsProvider(fontkitFont);
+        const capHeightRatio = (() => {
+          if (fontkitFont && isFiniteNumber(fontkitFont.capHeight) && isFiniteNumber(fontkitFont.unitsPerEm) && fontkitFont.unitsPerEm > 0) {
+            return Math.max(0.58, Math.min(0.84, fontkitFont.capHeight / fontkitFont.unitsPerEm));
+          }
+
+          const name = String(label || resName || '').toLowerCase();
+          if (name.includes('helvetica')) return 0.718;
+          if (name.includes('times')) return 0.662;
+          if (name.includes('courier')) return 0.562;
+          return 0.70;
+        })();
+
         return {
           kind: kind || 'embedded',
           res: resName,
           label: label || resName,
           font,
+          capHeightRatio,
+          boundsOf,
           canRender: txt => {
             try {
               txt = String(txt ?? '');
@@ -1795,10 +1953,14 @@
         const fbReg = makePdfLibFontAdapter(helv, helvRes, 'Helvetica');
         const fbBold = makePdfLibFontAdapter(helvBold, helvBoldRes, 'Helvetica-Bold');
 
+        const originalFontCache = new Map();
         const origAdapter = res => {
           if (!res) return null;
+          if (originalFontCache.has(res)) return originalFontCache.get(res);
           const fd = fontDict.get(PDFName.of(res.replace(/^\//, '')));
-          return fd ? makeOriginalFontAdapter(ctx, fd, res) : null;
+          const adapter = fd ? makeOriginalFontAdapter(ctx, fd, res, opts.fontkit) : null;
+          originalFontCache.set(res, adapter);
+          return adapter;
         };
 
         const digitsNeeded = bubbles.map(r => String(r.num)).join('');
@@ -1822,7 +1984,8 @@
             const font = await pdfDoc.embedFont(file.bytes, { subset: false });
             const res = '/' + freshName('FUP');
             fontDict.set(PDFName.of(res.slice(1)), font.ref);
-            const adapter = makePdfLibFontAdapter(font, res, file.meta && file.meta.fullName || file.name, 'uploaded');
+            const metricsFont = tryCreateFontkitFont(opts.fontkit, file.bytes);
+            const adapter = makePdfLibFontAdapter(font, res, file.meta && file.meta.fullName || file.name, 'uploaded', metricsFont);
             uploadedFontCache.set(key, adapter);
             log(`${label} font: matched uploaded font "${file.name}" to source font.`);
             return adapter;
@@ -1925,12 +2088,134 @@
         }
 
         const circleOverlaps = (a, b) => Math.hypot(a.cx - b.cx, a.cy - b.cy) < (a.rad + b.rad);
-        const rectForLabel = (item, width, size, dx, dy) => ({
-          x0: item.cx + dx - width / 2,
-          x1: item.cx + dx + width / 2,
-          y0: item.cy + dy - size * 0.46,
-          y1: item.cy + dy + size * 0.46,
-        });
+
+        function labelBaselineOffset(font, size) {
+          const ratio = font && isFiniteNumber(font.capHeightRatio)
+            ? font.capHeightRatio
+            : 0.72;
+
+          return -size * Math.max(0.32, Math.min(0.39, ratio / 2));
+        }
+
+        function fallbackLabelBounds(font, width, size) {
+          const baseline = labelBaselineOffset(font, size);
+          return {
+            x0: 0,
+            x1: width,
+            y0: 0,
+            y1: -baseline * 2,
+            advance: width,
+            source: 'fallback',
+          };
+        }
+
+        function measuredLabelBounds(label, font, width, size) {
+          const b = font && font.boundsOf ? font.boundsOf(label, size) : null;
+          const ok = b && [b.x0, b.y0, b.x1, b.y1].every(isFiniteNumber) && b.x1 > b.x0 && b.y1 > b.y0;
+
+          if (ok) {
+            const advance = isFiniteNumber(b.advance) ? b.advance : width;
+            const advanceClose = advance > 0 && Math.abs(advance - width) <= Math.max(size * 0.08, width * 0.12);
+            const height = b.y1 - b.y0;
+            const heightSane = height > size * 0.18 && height < size * 1.15;
+
+            if (advanceClose && heightSane) {
+              const xScale = width / advance;
+              return {
+                x0: b.x0 * xScale,
+                x1: b.x1 * xScale,
+                y0: b.y0,
+                y1: b.y1,
+                advance: width,
+                source: 'measured',
+              };
+            }
+          }
+
+          return fallbackLabelBounds(font, width, size);
+        }
+
+        function distinctSourceCircles(circles) {
+          const seen = new Set();
+          const out = [];
+
+          for (const c of circles || []) {
+            const key = `${Math.round(c.cx * 10)},${Math.round(c.cy * 10)}`;
+            if (seen.has(key)) continue;
+            seen.add(key);
+            out.push({ cx: c.cx, cy: c.cy, rad: c.r });
+          }
+
+          return out;
+        }
+
+        function nearestCircle(circles, x, y) {
+          let best = null;
+          let bestDist = Infinity;
+
+          for (const c of circles) {
+            const d = Math.hypot(x - c.cx, y - c.cy);
+            if (d < bestDist) {
+              best = c;
+              bestDist = d;
+            }
+          }
+
+          return best ? { circle: best, dist: bestDist } : null;
+        }
+
+        function buildSourceLabelPlacements(seg, circles, font) {
+          const placements = new Map();
+          if (!seg || !font || font.kind !== 'original') return placements;
+
+          const sourceCircles = distinctSourceCircles(circles);
+          const samples = new Map();
+
+          for (const show of seg.shows || []) {
+            const label = cleanEditableText(show.text);
+            if (!/^\d+$/.test(label)) continue;
+
+            const m = showMatrix(show, seg);
+            const size = showFontSize(show, seg);
+            const width = font.widthOf(label, size);
+            if (![m[4], m[5], size, width].every(isFiniteNumber) || size <= 0 || width <= 0) continue;
+
+            const approxX = m[4] + width / 2;
+            const approxY = m[5] - labelBaselineOffset(font, size);
+            const nearest = nearestCircle(sourceCircles, approxX, approxY);
+            if (!nearest || nearest.dist > Math.max(nearest.circle.rad * 0.75, size * 1.4)) continue;
+
+            const centerDx = approxX - nearest.circle.cx;
+            if (Math.abs(centerDx) > Math.max(3, size * 0.18)) continue;
+
+            if (!samples.has(label)) samples.set(label, []);
+            samples.get(label).push({
+              centerDx,
+              baselineDy: m[5] - nearest.circle.cy,
+              size,
+            });
+          }
+
+          samples.forEach((items, label) => {
+            if (!items.length) return;
+            placements.set(label, {
+              centerDx: items.reduce((sum, s) => sum + s.centerDx, 0) / items.length,
+              baselineDy: items.reduce((sum, s) => sum + s.baselineDy, 0) / items.length,
+              size: items.reduce((sum, s) => sum + s.size, 0) / items.length,
+            });
+          });
+
+          return placements;
+        }
+
+        function padRect(rect, pad) {
+          return {
+            x0: rect.x0 - pad,
+            y0: rect.y0 - pad,
+            x1: rect.x1 + pad,
+            y1: rect.y1 + pad,
+          };
+        }
 
         const rectInsideBubble = (rect, item) => {
           const rr = Math.max(1, item.rad - style.strokeW * 0.6);
@@ -1953,15 +2238,18 @@
           return probes.reduce((sum, [x, y]) => sum + (Math.hypot(x - circle.cx, y - circle.cy) < circle.rad ? 1 : 0), 1);
         };
 
-        function chooseLabelOffset(item, laterItems, width, size) {
+        function chooseLabelOffset(item, laterItems, rectAt) {
           const blockers = laterItems.filter(b => circleOverlaps(item, b));
           if (!blockers.length) return { dx: 0, dy: 0 };
 
           const score = (dx, dy) => {
-            const rect = rectForLabel(item, width, size, dx, dy);
+            const rect = rectAt(dx, dy);
             if (!rectInsideBubble(rect, item)) return Infinity;
             return blockers.reduce((sum, b) => sum + circleRectPenalty(b, rect), 0);
           };
+
+          const centerScore = score(0, 0);
+          if (centerScore === 0) return { dx: 0, dy: 0 };
 
           const step = item.rad * 0.32;
           const candidates = [
@@ -1972,7 +2260,7 @@
             [0, step * 0.48], [0, -step * 0.48], [step * 0.48, 0], [-step * 0.48, 0],
           ];
 
-          let best = { dx: 0, dy: 0, score: score(0, 0) };
+          let best = { dx: 0, dy: 0, score: centerScore };
 
           for (const [dx, dy] of candidates.slice(1)) {
             const s = score(dx, dy);
@@ -1980,9 +2268,47 @@
             if (s === 0) break;
           }
 
-          return best.score < score(0, 0) ? best : { dx: 0, dy: 0 };
+          return best.score < centerScore ? best : { dx: 0, dy: 0 };
         }
 
+        function placeLabel(item, laterItems, label, font, width, size, sourcePlacement) {
+          const bounds = measuredLabelBounds(label, font, width, size);
+          const centerX = width / 2;
+          const centerY = (bounds.y0 + bounds.y1) / 2;
+          const pad = Math.max(0.75, size * 0.045);
+
+          const sourceScale = sourcePlacement && sourcePlacement.size > 0 ? size / sourcePlacement.size : 1;
+          const originAt = sourcePlacement
+            ? ((dx, dy) => ({
+              x: item.cx + dx - centerX + sourcePlacement.centerDx * sourceScale,
+              y: item.cy + dy + sourcePlacement.baselineDy * sourceScale,
+            }))
+            : ((dx, dy) => ({
+              x: item.cx + dx - centerX,
+              y: item.cy + dy - centerY,
+            }));
+
+          const rectAt = (dx, dy) => {
+            const o = originAt(dx, dy);
+            return padRect({
+              x0: o.x + bounds.x0,
+              y0: o.y + bounds.y0,
+              x1: o.x + bounds.x1,
+              y1: o.y + bounds.y1,
+            }, pad);
+          };
+
+          const off = chooseLabelOffset(item, laterItems, rectAt);
+          const origin = originAt(off.dx, off.dy);
+
+          return {
+            tx: origin.x,
+            ty: origin.y,
+            rect: rectAt(off.dx, off.dy),
+          };
+        }
+
+        const sourceLabelPlacements = buildSourceLabelPlacements(numSeg, sourceBubbles, numFont);
         const bubbleItems = bubbles.map(r => {
           const top = (r.rank ?? r.num) <= opts.topN;
           const cx = Math.max(plotRect.x, Math.min(plotRect.x + plotRect.w, X(r.likelihood)));
@@ -2016,10 +2342,10 @@
             w = numFont.widthOf(label, size);
           }
 
-          const off = chooseLabelOffset(item, bubbleItems.slice(i + 1), w, size);
-          const tx = item.cx + off.dx - w / 2;
-          const ty = item.cy + off.dy - size * 0.36;
-          const labelRect = rectForLabel(item, w, size, off.dx, off.dy);
+          const placed = placeLabel(item, bubbleItems.slice(i + 1), label, numFont, w, size, sourceLabelPlacements.get(label));
+          const tx = placed.tx;
+          const ty = placed.ty;
+          const labelRect = placed.rect;
 
           bubbleOut.push('q');
           bubbleOut.push(`${fmt(item.fill[0])} ${fmt(item.fill[1])} ${fmt(item.fill[2])} rg`);
@@ -2413,10 +2739,14 @@
         const wantsCustom = !!(opts.fontkit && uploadedFiles.length);
         if (wantsCustom) pdfDoc.registerFontkit(opts.fontkit);
 
+        const originalFontCache = new Map();
         const origAdapter = res => {
           if (!res) return null;
+          if (originalFontCache.has(res)) return originalFontCache.get(res);
           const fd = fontDict.get(PDFName.of(res.replace(/^\//, '')));
-          return fd ? makeOriginalFontAdapter(ctx, fd, res) : null;
+          const adapter = fd ? makeOriginalFontAdapter(ctx, fd, res, opts.fontkit) : null;
+          originalFontCache.set(res, adapter);
+          return adapter;
         };
 
         const uploadedFontCache = new Map();
@@ -2429,7 +2759,8 @@
             const font = await pdfDoc.embedFont(file.bytes, { subset: false });
             const res = '/' + freshName('FUP');
             fontDict.set(PDFName.of(res.slice(1)), font.ref);
-            const adapter = makePdfLibFontAdapter(font, res, file.meta && file.meta.fullName || file.name, 'uploaded');
+            const metricsFont = tryCreateFontkitFont(opts.fontkit, file.bytes);
+            const adapter = makePdfLibFontAdapter(font, res, file.meta && file.meta.fullName || file.name, 'uploaded', metricsFont);
             uploadedFontCache.set(key, adapter);
             log(`${label} font: matched uploaded font "${file.name}" to source font.`);
             return adapter;
@@ -2709,8 +3040,75 @@
         updateHexSwatch(input);
       }
 
-      function fmtPlaceholderNumber(n) {
-        return isFinite(n) ? `${Math.round(n * 100) / 100} auto` : 'Auto';
+      const autoNumberControls = {
+        optMin: { value: 0, precision: 2 },
+        optMax: { value: 6, precision: 2 },
+        optBubbleMin: { value: null, precision: 1 },
+        optBubbleMax: { value: null, precision: 1 },
+        optStrokeW: { value: null, precision: 2 },
+        optNumSize: { value: null, precision: 2 },
+      };
+
+      const autoNumberIds = Object.keys(autoNumberControls);
+
+      function fmtControlNumber(n, precision) {
+        if (!isFinite(n)) return '';
+        const factor = Math.pow(10, precision == null ? 2 : precision);
+        return String(Math.round(n * factor) / factor);
+      }
+
+      function placeholderNumber(input) {
+        const m = String(input && input.placeholder || '').match(/-?\d+(?:\.\d+)?/);
+        return m ? parseFloat(m[0]) : null;
+      }
+
+      function autoNumberValue(id) {
+        const meta = autoNumberControls[id];
+        const value = meta && parseFloat(meta.value);
+        if (isFinite(value)) return value;
+
+        const fallback = placeholderNumber($(id));
+        return isFinite(fallback) ? fallback : null;
+      }
+
+      function setAutoNumberValue(id, value, precision) {
+        const input = $(id);
+        const meta = autoNumberControls[id];
+        if (!input || !meta) return;
+
+        const n = parseFloat(value);
+        meta.value = isFinite(n) ? n : null;
+        if (precision != null) meta.precision = precision;
+        input.placeholder = isFinite(n) ? `${fmtControlNumber(n, meta.precision)} auto` : 'Auto';
+
+        if (input.dataset.autoFilled === 'true') fillAutoNumberControl(id);
+      }
+
+      function fillAutoNumberControl(id) {
+        const input = $(id);
+        const meta = autoNumberControls[id];
+        const n = autoNumberValue(id);
+        if (!input || !meta || !isFinite(n)) return false;
+
+        input.value = fmtControlNumber(n, meta.precision);
+        input.dataset.autoFilled = 'true';
+        return true;
+      }
+
+      function populateBlankAutoNumberControls() {
+        autoNumberIds.forEach(id => {
+          const input = $(id);
+          if (input && (input.value === '' || input.dataset.autoFilled === 'true')) {
+            fillAutoNumberControl(id);
+          }
+        });
+      }
+
+      function optionNumber(id, fallback) {
+        const input = $(id);
+        const raw = input ? String(input.value || '').trim() : '';
+        const parsed = raw === '' ? autoNumberValue(id) : parseFloat(raw);
+        return isFinite(parsed) ? parsed : fallback;
       }
 
       function populateBubbleStyleControls(style) {
@@ -2721,8 +3119,8 @@
         if (style.stdStroke) setHexPlaceholder('optStdStroke', rgbToHex(style.stdStroke));
         if (style.numColor) setHexPlaceholder('optNumColor', rgbToHex(style.numColor));
         if (style.legendColor) setHexPlaceholder('optLegendColor', rgbToHex(style.legendColor));
-        $('optStrokeW').placeholder = fmtPlaceholderNumber(style.strokeW);
-        $('optNumSize').placeholder = fmtPlaceholderNumber(style.numSize);
+        setAutoNumberValue('optStrokeW', style.strokeW, 2);
+        setAutoNumberValue('optNumSize', style.numSize, 2);
       }
 
       function hasCoreAssets() {
@@ -2894,6 +3292,7 @@
           rank: r.rank
         })));
 
+        populateBlankAutoNumberControls();
         renderTable();
         return parsed;
       }
@@ -2950,11 +3349,12 @@
           if (info.dateText) $('optDate').placeholder = info.dateText;
 
           if (info.bubbleDiameters) {
-            $('optBubbleMin').placeholder = `${info.bubbleDiameters.min.toFixed(1)} auto`;
-            $('optBubbleMax').placeholder = `${info.bubbleDiameters.max.toFixed(1)} auto`;
+            setAutoNumberValue('optBubbleMin', info.bubbleDiameters.min, 1);
+            setAutoNumberValue('optBubbleMax', info.bubbleDiameters.max, 1);
           }
 
           populateBubbleStyleControls(info.style);
+          if (bubbles && bubbles.length) populateBlankAutoNumberControls();
 
           log(`Illustrator file "${f.name}":`, info);
 
@@ -3053,6 +3453,8 @@
         $('fontLabel').textContent = fonts.files.length
           ? `${fonts.files.length} font${fonts.files.length === 1 ? '' : 's'} loaded`
           : 'optional .ttf / .otf';
+
+        schedule();
       }
 
       wireDrop('dropAi', 'fileAi');
@@ -3094,7 +3496,9 @@
       });
 
       ['optTopN', 'optMin', 'optMax', 'optDate', 'optBubbleMin', 'optBubbleMax', 'optNumSize', 'optStrokeW'].forEach(id => {
-        $(id).addEventListener('input', () => {
+        const input = $(id);
+        input.addEventListener('input', () => {
+          if (autoNumberControls[id]) delete input.dataset.autoFilled;
           rememberAdvancedOpen();
           if (id === 'optTopN') paintTopMarks();
           schedule();
@@ -3117,17 +3521,17 @@
 
       const opts = () => ({
         topN: Math.max(0, parseInt($('optTopN').value || '10', 10)),
-        axisMin: parseFloat($('optMin').value || '0'),
-        axisMax: parseFloat($('optMax').value || '6'),
+        axisMin: optionNumber('optMin', 0),
+        axisMax: optionNumber('optMax', 6),
         dateText: $('optDate').value.trim() || null,
-        bubbleMinDiameter: $('optBubbleMin').value === '' ? null : parseFloat($('optBubbleMin').value),
-        bubbleMaxDiameter: $('optBubbleMax').value === '' ? null : parseFloat($('optBubbleMax').value),
+        bubbleMinDiameter: optionNumber('optBubbleMin', null),
+        bubbleMaxDiameter: optionNumber('optBubbleMax', null),
         topFill: hexToRgb($('optTopFill').value),
         topStroke: hexToRgb($('optTopStroke').value),
         stdFill: hexToRgb($('optStdFill').value),
         stdStroke: hexToRgb($('optStdStroke').value),
-        strokeW: $('optStrokeW').value === '' ? null : parseFloat($('optStrokeW').value),
-        numSize: $('optNumSize').value === '' ? null : parseFloat($('optNumSize').value),
+        strokeW: optionNumber('optStrokeW', null),
+        numSize: optionNumber('optNumSize', null),
         numColor: hexToRgb($('optNumColor').value),
         legendColor: hexToRgb($('optLegendColor').value),
         staticTextEdits,
