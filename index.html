@@ -493,6 +493,99 @@
       user-select: text
     }
 
+    #pickCapture {
+      position: absolute;
+      left: 0;
+      top: 0;
+      width: 0;
+      height: 0;
+      display: none;
+      cursor: crosshair;
+      z-index: 4;
+      background: rgba(43, 34, 40, .04)
+    }
+
+    #pickCapture.on {
+      display: block
+    }
+
+    #pickBox,
+    #pickSelectedBox {
+      position: absolute;
+      left: 0;
+      top: 0;
+      width: 0;
+      height: 0;
+      display: none;
+      box-sizing: border-box;
+      border: 2px dashed var(--orange);
+      border-radius: 4px;
+      background: rgba(229, 117, 31, .10);
+      pointer-events: none;
+      z-index: 5
+    }
+
+    #pickBox.on,
+    #pickSelectedBox.on {
+      display: block
+    }
+
+    #pickBoxLabel {
+      position: absolute;
+      left: -2px;
+      top: -20px;
+      font: 11px system-ui;
+      background: var(--orange);
+      color: #fff;
+      padding: 1px 5px;
+      border-radius: 3px;
+      white-space: nowrap
+    }
+
+    .regionPick {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      flex-wrap: wrap
+    }
+
+    .regionBtn,
+    .regionReset {
+      font: 12px system-ui;
+      border: 1px solid var(--line);
+      background: #fff;
+      color: var(--ink);
+      border-radius: 6px;
+      padding: 4px 9px;
+      cursor: pointer
+    }
+
+    .regionBtn:hover,
+    .regionReset:hover {
+      border-color: var(--orange)
+    }
+
+    .regionBtn.active {
+      background: var(--orange);
+      color: #fff;
+      border-color: var(--orange)
+    }
+
+    .regionBtn:disabled {
+      opacity: .5;
+      cursor: not-allowed
+    }
+
+    .regionReadout {
+      font: 12px system-ui;
+      color: #7d6f76
+    }
+
+    .regionReadout.custom {
+      color: var(--orange);
+      font-weight: 600
+    }
+
     #pv.busy::after {
       content: "";
       position: absolute;
@@ -537,6 +630,9 @@
 
     <div id="pv"><canvas id="pvCanvas"></canvas>
       <div id="editLayer"></div>
+      <div id="pickCapture"></div>
+      <div id="pickSelectedBox"></div>
+      <div id="pickBox"><span id="pickBoxLabel"></span></div>
     </div>
 
     <details id="advanced">
@@ -581,6 +677,14 @@
             <select id="optSheet" disabled>
               <option value="">Auto</option>
             </select>
+          </div>
+          <div class="opt" title="Use a specific Illustrator object or group as the plot area instead of the auto-detected gradient region">
+            <label for="btnPickRegion">Plot region</label>
+            <div class="regionPick">
+              <button type="button" id="btnPickRegion" class="regionBtn" disabled>Pick region&hellip;</button>
+              <button type="button" id="btnRegionReset" class="regionReset" hidden>Reset to auto</button>
+              <span id="regionReadout" class="regionReadout">Auto-detected</span>
+            </div>
           </div>
         </div>
         <div class="optGroups">
@@ -956,6 +1060,13 @@
       const applyMat = (m, x, y) => [m[0] * x + m[2] * y + m[4], m[1] * x + m[3] * y + m[5]];
       const IDENT = [1, 0, 0, 1, 0, 0];
       const cmykToRgb = (c, m, y, k) => [(1 - Math.min(1, c + k)), (1 - Math.min(1, m + k)), (1 - Math.min(1, y + k))];
+      const colorFromComps = (args) => {
+        const nums = (args || []).filter(t => t && typeof t.val === 'number').map(t => t.val);
+        if (nums.length === 1) return [nums[0], nums[0], nums[0]];
+        if (nums.length === 3) return [nums[0], nums[1], nums[2]];
+        if (nums.length === 4) return cmykToRgb(nums[0], nums[1], nums[2], nums[3]);
+        return null;
+      };
 
       /* ---------------- analyze a content stream ---------------- */
       function analyze(content) {
@@ -985,7 +1096,10 @@
         };
 
         const beginPath = (startChar) => { path = { xs: [], ys: [], moves: 0, curves: 0, lines: 0, rects: 0, startChar }; };
-        const addPt = (x, y) => { const p = applyMat(g.ctm, x, y); path.xs.push(p[0]); path.ys.push(p[1]); };
+        const regions = [];
+        const mcStack = [];
+        const extendMc = (x, y) => { for (const mm of mcStack) { if (x < mm.minx) mm.minx = x; if (y < mm.miny) mm.miny = y; if (x > mm.maxx) mm.maxx = x; if (y > mm.maxy) mm.maxy = y; } };
+        const addPt = (x, y) => { const p = applyMat(g.ctm, x, y); path.xs.push(p[0]); path.ys.push(p[1]); extendMc(p[0], p[1]); };
 
         for (let i = 0; i < ops.length; i++) {
           const o = ops[i]; const a = o.args; const v = j => a[j] && a[j].val;
@@ -1000,6 +1114,8 @@
             case 'G': g.stroke = [v(0), v(0), v(0)]; break;
             case 'k': g.fill = cmykToRgb(v(0), v(1), v(2), v(3)); break;
             case 'K': g.stroke = cmykToRgb(v(0), v(1), v(2), v(3)); break;
+            case 'sc': case 'scn': { const c = colorFromComps(a); if (c) g.fill = c; break; }
+            case 'SC': case 'SCN': { const c = colorFromComps(a); if (c) g.stroke = c; break; }
             case 'm': if (!path) beginPath(o.start); path.moves++; addPt(v(0), v(1)); break;
             case 'l': if (path) { path.lines++; addPt(v(0), v(1)); } break;
             case 'c': if (path) { path.curves++; addPt(v(0), v(1)); addPt(v(2), v(3)); addPt(v(4), v(5)); } break;
@@ -1017,7 +1133,8 @@
                 const x0 = Math.min(...path.xs), x1 = Math.max(...path.xs);
                 const y0 = Math.min(...path.ys), y1 = Math.max(...path.ys);
                 const w = x1 - x0, h = y1 - y0;
-                if (pendingClip && path.rects > 0) clipRects.push({ x: x0, y: y0, w, h, opIdx: i });
+                if (pendingClip && path.rects > 0) { clipRects.push({ x: x0, y: y0, w, h, opIdx: i }); if (w > 2 && h > 2) regions.push({ x: x0, y: y0, w, h, kind: 'clip' }); }
+                if (o.op !== 'n' && w > 2 && h > 2) regions.push({ x: x0, y: y0, w, h, kind: 'object' });
                 if (o.op !== 'n' && path.moves === 1 && path.curves >= 3 && path.lines === 0 && w > 2 && h > 2 &&
                   Math.abs(w - h) / Math.max(w, h) < 0.18) {
                   circles.push({
@@ -1031,6 +1148,12 @@
               break;
             }
             case 'sh': shClipIdx = clipRects.length - 1; break;
+            case 'BDC': case 'BMC': mcStack.push({ minx: Infinity, miny: Infinity, maxx: -Infinity, maxy: -Infinity }); break;
+            case 'EMC': {
+              const mm = mcStack.pop();
+              if (mm && isFinite(mm.minx) && mm.maxx > mm.minx && mm.maxy > mm.miny) regions.push({ x: mm.minx, y: mm.miny, w: mm.maxx - mm.minx, h: mm.maxy - mm.miny, kind: 'group' });
+              break;
+            }
             case 'BT': inText = true; tm = IDENT.slice(); tlm = IDENT.slice(); TL = 0; seg = null; break;
             case 'ET': inText = false; seg = null; break;
             case 'Tf': fontRes = a[0] ? a[0].raw : fontRes; fontSize = v(1) || 1; break;
@@ -1059,7 +1182,7 @@
         }
 
         const plotRect = shClipIdx >= 0 ? clipRects[shClipIdx] : null;
-        return { ops, circles, clipRects, plotRect, segments };
+        return { ops, circles, clipRects, plotRect, segments, regions };
       }
 
       /* ---------------- glyph coverage / encoding for original fonts ---------------- */
@@ -1813,6 +1936,11 @@
 
         const { circles, plotRect, segments } = analyze(content);
         if (!plotRect) throw new Error('Could not locate the plot area (gradient clip rectangle) in the Illustrator file. Is this the right heat-map file?');
+        const ov = opts.plotRectOverride;
+        const placeRect = (ov && isFinite(ov.x) && isFinite(ov.y) && ov.w > 0 && ov.h > 0)
+          ? { x: ov.x, y: ov.y, w: ov.w, h: ov.h }
+          : plotRect;
+        if (placeRect !== plotRect) log(`Custom plot region: x=${placeRect.x.toFixed(1)} y=${placeRect.y.toFixed(1)} w=${placeRect.w.toFixed(1)} h=${placeRect.h.toFixed(1)}`);
         const artworkRect = inferArtworkRect(circles, segments, plotRect);
         log(`Plot area: x=${plotRect.x.toFixed(1)} y=${plotRect.y.toFixed(1)} w=${plotRect.w.toFixed(1)} h=${plotRect.h.toFixed(1)}`);
 
@@ -2038,8 +2166,8 @@
         log(`Bubble-number font: ${fontLabel(numFont)}; legend font: ${fontLabel(legendFont)}`);
 
         const span = opts.axisMax - opts.axisMin;
-        const X = lk => plotRect.x + ((lk - opts.axisMin) / span) * plotRect.w;
-        const Y = im => plotRect.y + ((im - opts.axisMin) / span) * plotRect.h;
+        const X = lk => placeRect.x + ((lk - opts.axisMin) / span) * placeRect.w;
+        const Y = im => placeRect.y + ((im - opts.axisMin) / span) * placeRect.h;
 
         const radiusFor = v => {
           const r = style.radii;
@@ -2311,8 +2439,8 @@
         const sourceLabelPlacements = buildSourceLabelPlacements(numSeg, sourceBubbles, numFont);
         const bubbleItems = bubbles.map(r => {
           const top = (r.rank ?? r.num) <= opts.topN;
-          const cx = Math.max(plotRect.x, Math.min(plotRect.x + plotRect.w, X(r.likelihood)));
-          const cy = Math.max(plotRect.y, Math.min(plotRect.y + plotRect.h, Y(r.impact)));
+          const cx = Math.max(placeRect.x, Math.min(placeRect.x + placeRect.w, X(r.likelihood)));
+          const cy = Math.max(placeRect.y, Math.min(placeRect.y + placeRect.h, Y(r.impact)));
           const rad = radiusFor(r.velocity);
           const item = {
             r,
@@ -2374,8 +2502,8 @@
         });
 
         const lg = {
-          namesX: legendNamesSeg ? legendNamesSeg.x : plotRect.x + plotRect.w + 132,
-          topY: legendNamesSeg ? legendNamesSeg.y : plotRect.y + plotRect.h - 96,
+          namesX: legendNamesSeg ? legendNamesSeg.x : placeRect.x + placeRect.w + 132,
+          topY: legendNamesSeg ? legendNamesSeg.y : placeRect.y + placeRect.h - 96,
           size: legendNamesSeg ? legendNamesSeg.size : DEFAULTS.legend.size,
           color: style.legendColor,
         };
@@ -2922,7 +3050,7 @@
           content += s2 + '\n';
         }
 
-        const { circles, plotRect, segments } = analyze(content);
+        const { circles, plotRect, segments, regions } = analyze(content);
         if (!plotRect) throw new Error('Could not locate the plot area in this file.');
 
         const inPlot = (x, y) => x > plotRect.x - 2 && x < plotRect.x + plotRect.w + 2 && y > plotRect.y - 2 && y < plotRect.y + plotRect.h + 2;
@@ -2939,8 +3067,22 @@
           }
         }
 
+        const pageArea = page.getWidth() * page.getHeight();
+        const seenKey = new Set();
+        const pickRegions = [];
+        const pushRegion = (rg, kind) => {
+          if (!rg || !(rg.w > 4 && rg.h > 4)) return;
+          if (rg.w * rg.h > pageArea * 0.985) return;
+          const key = [Math.round(rg.x), Math.round(rg.y), Math.round(rg.w), Math.round(rg.h)].join(',');
+          if (seenKey.has(key)) return;
+          seenKey.add(key);
+          pickRegions.push({ x: rg.x, y: rg.y, w: rg.w, h: rg.h, kind: kind || rg.kind || 'object' });
+        };
+        pushRegion(plotRect, 'plot');
+        for (const rg of regions) pushRegion(rg, rg.kind);
         return {
           bubbleCount: distinct.size,
+          regions: pickRegions,
           plotRect,
           dateText,
           radii,
@@ -2970,6 +3112,11 @@
       let bubbles = null;
       let lastBytes = null;
       let staticTextEdits = {};
+      let plotRegionOverride = null;   /* {x,y,w,h} in PDF points, or null for auto-detect */
+      let autoPlotRegion = null;       /* auto-detected plot region in PDF points */
+      let pickRegions = [];            /* candidate regions from the current AI file */
+      let pickMode = false;            /* true while the user is choosing a region */
+      let pickHover = null;            /* region currently highlighted under the cursor */
 
       const fonts = { files: [] };
       let nextBubbleId = 1;
@@ -3338,6 +3485,11 @@
           aiName = f.name;
           staticTextEdits = {};
           lastBytes = null;
+          plotRegionOverride = null;
+          autoPlotRegion = null;
+          pickRegions = [];
+          if (pickMode) exitPickMode();
+          updateRegionReadout();
 
           $('dropAi').classList.add('loaded');
           $('aiLabel').textContent = f.name;
@@ -3345,6 +3497,11 @@
           await new Promise(requestAnimationFrame);
 
           const info = await BubbleMapCore.inspect(aiBytes);
+          pickRegions = Array.isArray(info.regions) ? info.regions : [];
+          autoPlotRegion = info.plotRect && info.plotRect.w > 0 && info.plotRect.h > 0
+            ? { x: info.plotRect.x, y: info.plotRect.y, w: info.plotRect.w, h: info.plotRect.h }
+            : null;
+          updateRegionReadout();
 
           if (info.dateText) $('optDate').placeholder = info.dateText;
 
@@ -3362,6 +3519,11 @@
           aiBytes = null;
           aiName = null;
           lastBytes = null;
+          plotRegionOverride = null;
+          autoPlotRegion = null;
+          pickRegions = [];
+          if (pickMode) exitPickMode();
+          updateRegionReadout();
           $('dropAi').classList.remove('loaded');
           $('aiLabel').textContent = '.ai';
           $('btnDl').disabled = true;
@@ -3535,6 +3697,7 @@
         numColor: hexToRgb($('optNumColor').value),
         legendColor: hexToRgb($('optLegendColor').value),
         staticTextEdits,
+        plotRectOverride: plotRegionOverride,
       });
 
       /* ---------- editable data table ---------- */
@@ -3747,6 +3910,7 @@
           await revealPreviewCanvas(c);
           previewState = { items: editItems || [], viewport: vp };
           renderEditLayer(previewState.items, previewState.viewport);
+          if (pickMode) { syncPickCaptureBox(); showSelectedPickRegion(); showPickBox(pickHover); }
         } finally {
           doc.destroy();
         }
@@ -3837,6 +4001,7 @@
         if (previewResizeFrame) cancelAnimationFrame(previewResizeFrame);
         previewResizeFrame = requestAnimationFrame(() => {
           previewResizeFrame = 0;
+          if (pickMode) { syncPickCaptureBox(); showSelectedPickRegion(); showPickBox(pickHover); return; }
           if (!previewState.viewport || activePreviewEdit) return;
           renderEditLayer(previewState.items, previewState.viewport);
         });
@@ -3844,6 +4009,7 @@
 
       function renderEditLayer(items, vp) {
         if (activePreviewEdit) return;
+        if (pickMode) return;
 
         const layer = $('editLayer');
         const c = $('pvCanvas');
@@ -4178,6 +4344,196 @@
           alert(`Could not export ${format.toUpperCase()}. Check the browser console for details.`);
         }
       });
+
+      /* ---------- plot region picker ---------- */
+      function updateRegionReadout() {
+        const readout = $('regionReadout');
+        const resetBtn = $('btnRegionReset');
+        const pickBtn = $('btnPickRegion');
+        const hasCustomRegion = !!plotRegionOverride && !samePlotRegion(plotRegionOverride, autoPlotRegion);
+        if (plotRegionOverride && !hasCustomRegion) plotRegionOverride = null;
+        if (readout) {
+          if (hasCustomRegion) {
+            readout.textContent = `Custom \u00b7 ${Math.round(plotRegionOverride.w)}\u00d7${Math.round(plotRegionOverride.h)} pt`;
+            readout.classList.add('custom');
+          } else {
+            readout.textContent = 'Auto-detected';
+            readout.classList.remove('custom');
+          }
+        }
+        if (resetBtn) resetBtn.hidden = !hasCustomRegion;
+        if (pickBtn) {
+          pickBtn.disabled = !aiBytes;
+          pickBtn.classList.toggle('active', pickMode);
+          pickBtn.textContent = pickMode ? 'Cancel' : 'Pick region\u2026';
+        }
+      }
+
+      function samePlotRegion(a, b) {
+        if (!a || !b) return false;
+        const close = (x, y) => Math.abs(x - y) < 0.75;
+        return close(a.x, b.x) && close(a.y, b.y) && close(a.w, b.w) && close(a.h, b.h);
+      }
+
+      function pdfPointFromEvent(e) {
+        const vp = previewState.viewport;
+        const c = $('pvCanvas');
+        if (!vp || !c) return null;
+        const rect = c.getBoundingClientRect();
+        if (!(rect.width > 0 && rect.height > 0)) return null;
+        const vx = (e.clientX - rect.left) * (c.width / rect.width);
+        const vy = (e.clientY - rect.top) * (c.height / rect.height);
+        const p = vp.convertToPdfPoint(vx, vy);
+        return { px: p[0], py: p[1] };
+      }
+
+      function regionAtPoint(px, py) {
+        let best = null;
+        for (const rg of pickRegions) {
+          if (px < rg.x || px > rg.x + rg.w || py < rg.y || py > rg.y + rg.h) continue;
+          const area = rg.w * rg.h;
+          if (!best || area < best.area) best = { rg, area };
+        }
+        return best ? best.rg : null;
+      }
+
+      function syncPickCaptureBox() {
+        const cap = $('pickCapture');
+        const c = $('pvCanvas');
+        if (!cap || !c) return;
+        cap.style.left = (c.offsetLeft + c.clientLeft) + 'px';
+        cap.style.top = (c.offsetTop + c.clientTop) + 'px';
+        cap.style.width = (c.clientWidth || 0) + 'px';
+        cap.style.height = (c.clientHeight || 0) + 'px';
+      }
+
+      function positionPickRegionBox(box, rg) {
+        const c = $('pvCanvas');
+        const vp = previewState.viewport;
+        if (!box || !c || !vp || !rg) return false;
+        const r = vp.convertToViewportRectangle([rg.x, rg.y, rg.x + rg.w, rg.y + rg.h]);
+        const sx = (c.clientWidth / c.width) || 1;
+        const sy = (c.clientHeight / c.height) || 1;
+        box.style.left = (c.offsetLeft + Math.min(r[0], r[2]) * sx) + 'px';
+        box.style.top = (c.offsetTop + Math.min(r[1], r[3]) * sy) + 'px';
+        box.style.width = (Math.abs(r[2] - r[0]) * sx) + 'px';
+        box.style.height = (Math.abs(r[3] - r[1]) * sy) + 'px';
+        return true;
+      }
+
+      function showSelectedPickRegion() {
+        const box = $('pickSelectedBox');
+        const selectedRegion = plotRegionOverride || autoPlotRegion;
+        if (!box) return;
+        if (!pickMode || !selectedRegion || !positionPickRegionBox(box, selectedRegion)) {
+          box.classList.remove('on');
+          return;
+        }
+        box.classList.add('on');
+      }
+
+      function showPickBox(rg) {
+        const box = $('pickBox');
+        const label = $('pickBoxLabel');
+        if (!box) return;
+        if (!rg) { box.classList.remove('on'); pickHover = null; return; }
+        if (!positionPickRegionBox(box, rg)) { box.classList.remove('on'); pickHover = null; return; }
+        if (label) label.textContent = `${Math.round(rg.w)}\u00d7${Math.round(rg.h)} pt`;
+        box.classList.add('on');
+        pickHover = rg;
+      }
+
+      function onPickMove(e) {
+        const pt = pdfPointFromEvent(e);
+        if (!pt) { showPickBox(null); return; }
+        showPickBox(regionAtPoint(pt.px, pt.py));
+      }
+
+      function onPickDown(e) {
+        e.preventDefault();
+        e.stopPropagation();
+        const pt = pdfPointFromEvent(e);
+        const rg = pt ? regionAtPoint(pt.px, pt.py) : null;
+        if (!rg) return;
+        const pickedRegion = { x: rg.x, y: rg.y, w: rg.w, h: rg.h };
+        plotRegionOverride = samePlotRegion(pickedRegion, autoPlotRegion) ? null : pickedRegion;
+        exitPickMode();
+        updateRegionReadout();
+        schedule();
+      }
+
+      function onPickKey(e) {
+        if (e.key === 'Escape') { e.preventDefault(); exitPickMode(); }
+      }
+
+      function enterPickMode() {
+        if (!aiBytes || !previewState.viewport) return;
+        pickMode = true;
+        $('editLayer').innerHTML = '';
+        const cap = $('pickCapture');
+        syncPickCaptureBox();
+        showSelectedPickRegion();
+        if (cap) {
+          cap.classList.add('on');
+          cap.addEventListener('pointermove', onPickMove);
+          cap.addEventListener('pointerdown', onPickDown);
+          cap.addEventListener('pointerleave', onPickLeave);
+        }
+        window.addEventListener('keydown', onPickKey);
+        updateRegionReadout();
+      }
+
+      function onPickLeave() { showPickBox(null); }
+
+      function exitPickMode() {
+        if (!pickMode) { updateRegionReadout(); return; }
+        pickMode = false;
+        const cap = $('pickCapture');
+        if (cap) {
+          cap.classList.remove('on');
+          cap.removeEventListener('pointermove', onPickMove);
+          cap.removeEventListener('pointerdown', onPickDown);
+          cap.removeEventListener('pointerleave', onPickLeave);
+        }
+        window.removeEventListener('keydown', onPickKey);
+        showPickBox(null);
+        showSelectedPickRegion();
+        updateRegionReadout();
+        if (previewState.viewport) renderEditLayer(previewState.items, previewState.viewport);
+      }
+
+      $('btnPickRegion').addEventListener('click', () => { pickMode ? exitPickMode() : enterPickMode(); });
+      $('btnRegionReset').addEventListener('click', () => {
+        plotRegionOverride = null;
+        if (pickMode) exitPickMode();
+        updateRegionReadout();
+        schedule();
+      });
+
+      /* ---------- fresh settings on every (re)load ---------- */
+      function refreshParameters() {
+        const setVal = (id, v) => { const el = $(id); if (el) el.value = v; };
+        setVal('optTopN', '10');
+        ['optMin', 'optMax', 'optBubbleMin', 'optBubbleMax', 'optDate', 'optStrokeW', 'optNumSize'].forEach(id => setVal(id, ''));
+        ['optBubbleMin', 'optBubbleMax', 'optMin', 'optMax', 'optStrokeW', 'optNumSize'].forEach(id => { const el = $(id); if (el) delete el.dataset.autoFilled; });
+        ['optTopFill', 'optTopStroke', 'optStdFill', 'optStdStroke', 'optNumColor', 'optLegendColor'].forEach(id => {
+          const el = $(id);
+          if (el) { el.value = ''; el.placeholder = 'Auto'; updateHexSwatch(el); }
+        });
+        const fmt = $('optFormat'); if (fmt) fmt.value = 'pdf';
+        $('optDate').placeholder = '';
+        staticTextEdits = {};
+        plotRegionOverride = null;
+        autoPlotRegion = null;
+        pickRegions = [];
+        if (pickMode) exitPickMode();
+        updateRegionReadout();
+        if (typeof paintTopMarks === 'function') paintTopMarks();
+      }
+
+      document.querySelectorAll('#advanced input, #advanced select').forEach(el => el.setAttribute('autocomplete', 'off'));
+      window.addEventListener('pageshow', e => { if (e.persisted) location.reload(); });
+      refreshParameters();
 
       updateLayout();
     })();
