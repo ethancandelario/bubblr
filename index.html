@@ -3537,9 +3537,47 @@
 
       function wireDrop(dropId, inputId) {
         const d = $(dropId), inp = $(inputId);
+        const originalAccept = inp.getAttribute('accept');
+        const loosenMobilePicker = inputId === 'fileAi';
+        let restoreAcceptTimer = null;
 
-        d.addEventListener('click', e => { if (e.target !== inp) inp.click(); });
+        const isMobilePicker = () => {
+          const mobileUa = !!(navigator.userAgentData && navigator.userAgentData.mobile);
+          const coarsePointer = window.matchMedia && window.matchMedia('(hover: none) and (pointer: coarse)').matches;
+          return mobileUa || coarsePointer;
+        };
+
+        const restoreAccept = () => {
+          if (!loosenMobilePicker) return;
+          if (restoreAcceptTimer) {
+            clearTimeout(restoreAcceptTimer);
+            restoreAcceptTimer = null;
+          }
+          if (originalAccept == null) inp.removeAttribute('accept');
+          else inp.setAttribute('accept', originalAccept);
+          window.removeEventListener('focus', restoreAccept);
+          document.removeEventListener('visibilitychange', restoreAcceptOnVisible);
+          inp.removeEventListener('cancel', restoreAccept);
+        };
+
+        const restoreAcceptOnVisible = () => {
+          if (document.visibilityState === 'visible') restoreAccept();
+        };
+
+        const openPicker = () => {
+          if (loosenMobilePicker && isMobilePicker()) {
+            inp.removeAttribute('accept');
+            window.addEventListener('focus', restoreAccept, { once: true });
+            document.addEventListener('visibilitychange', restoreAcceptOnVisible);
+            inp.addEventListener('cancel', restoreAccept, { once: true });
+            restoreAcceptTimer = setTimeout(restoreAccept, 60000);
+          }
+          inp.click();
+        };
+
+        d.addEventListener('click', e => { if (e.target !== inp) openPicker(); });
         inp.addEventListener('change', () => {
+          restoreAccept();
           if (inp.files.length) routeFiles(inp.files);
           inp.value = '';
         });
