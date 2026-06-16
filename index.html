@@ -611,12 +611,11 @@
   <main>
     <div class="startPrompt">Drop files here to get started.</div>
     <div class="bar">
-      <div class="drop" id="dropAi" title="The base Illustrator file, saved as .ai with PDF compatibility.">
+      <div class="drop" id="dropAi" title="The base design file. (.ai with PDF compatibility, or .pdf)">
         <input type="file" id="fileAi" accept=".ai,.pdf,application/pdf">
         <b>Design</b><span id="aiLabel">.ai / .pdf</span>
       </div>
-      <div class="drop" id="dropXl"
-        title="The spreadsheet containing the data to visualize. (.xlsx/.xlsm)">
+      <div class="drop" id="dropXl" title="The spreadsheet containing the data to visualize. (.xlsx/.xlsm)">
         <input type="file" id="fileXl" accept=".xlsx,.xlsm,.xls,.csv">
         <b>Spreadsheet</b><span id="xlLabel">.xlsx / .xlsm</span>
       </div>
@@ -678,7 +677,8 @@
               <option value="">Auto</option>
             </select>
           </div>
-          <div class="opt" title="Use a specific Illustrator object or group as the plot area instead of the auto-detected gradient region">
+          <div class="opt"
+            title="Use a specific Illustrator object or group as the plot area instead of the auto-detected rectangle">
             <label for="btnPickRegion">Plot region</label>
             <div class="regionPick">
               <button type="button" id="btnPickRegion" class="regionBtn" disabled>Pick region&hellip;</button>
@@ -1075,9 +1075,10 @@
         const stack = []; let g = st();
         const circles = [];
         const clipRects = [];
+        const plotCandidates = [];
+        const plotCandidateKeys = new Set();
         let pendingClip = false;
         let path = null;
-        let shClipIdx = -1;
 
         let inText = false, tm = IDENT.slice(), tlm = IDENT.slice(), TL = 0;
         let fontRes = null, fontSize = 0;
@@ -1095,11 +1096,94 @@
           segments.push(seg);
         };
 
-        const beginPath = (startChar) => { path = { xs: [], ys: [], moves: 0, curves: 0, lines: 0, rects: 0, startChar }; };
+        const beginPath = (startChar) => { path = { xs: [], ys: [], moves: 0, curves: 0, lines: 0, rects: 0, rectBoxes: [], startChar }; };
         const regions = [];
         const mcStack = [];
         const extendMc = (x, y) => { for (const mm of mcStack) { if (x < mm.minx) mm.minx = x; if (y < mm.miny) mm.miny = y; if (x > mm.maxx) mm.maxx = x; if (y > mm.maxy) mm.maxy = y; } };
         const addPt = (x, y) => { const p = applyMat(g.ctm, x, y); path.xs.push(p[0]); path.ys.push(p[1]); extendMc(p[0], p[1]); };
+        const pathRect = () => {
+          if (!path || !path.xs.length) return null;
+          const x0 = Math.min(...path.xs), x1 = Math.max(...path.xs);
+          const y0 = Math.min(...path.ys), y1 = Math.max(...path.ys);
+          return { x: x0, y: y0, w: x1 - x0, h: y1 - y0 };
+        };
+        const rectArea = r => r && r.w > 0 && r.h > 0 ? r.w * r.h : 0;
+        /* ---------- detect plot region candidates ---------- */
+        const isDecentPlotRect = r => !!(r && r.w >= 72 && r.h >= 72 && rectArea(r) >= 10000);
+        const addPlotCandidate = (rect, kind, opIdx) => {
+          if (!isDecentPlotRect(rect)) return;
+          const candidate = { x: rect.x, y: rect.y, w: rect.w, h: rect.h, kind, opIdx };
+          const key = [Math.round(candidate.x * 10), Math.round(candidate.y * 10), Math.round(candidate.w * 10), Math.round(candidate.h * 10), kind].join(',');
+          if (plotCandidateKeys.has(key)) return;
+          plotCandidateKeys.add(key);
+          plotCandidates.push(candidate);
+        };
+        const noteGroupRect = rect => {
+          if (!isDecentPlotRect(rect)) return;
+          for (const mm of mcStack) {
+            if (!mm.rect || rectArea(rect) > rectArea(mm.rect)) mm.rect = { x: rect.x, y: rect.y, w: rect.w, h: rect.h };
+          }
+        };
+        const addRectPath = (x, y, w, h) => {
+          const pts = [
+            applyMat(g.ctm, x, y),
+            applyMat(g.ctm, x + w, y),
+            applyMat(g.ctm, x + w, y + h),
+            applyMat(g.ctm, x, y + h),
+          ];
+          pts.forEach(p => { path.xs.push(p[0]); path.ys.push(p[1]); extendMc(p[0], p[1]); });
+          path.rectBoxes.push({
+            x: Math.min(...pts.map(p => p[0])),
+            y: Math.min(...pts.map(p => p[1])),
+            w: Math.max(...pts.map(p => p[0])) - Math.min(...pts.map(p => p[0])),
+            h: Math.max(...pts.map(p => p[1])) - Math.min(...pts.map(p => p[1])),
+          });
+        };
+        const containsPoint = (r, x, y, pad) => x >= r.x - pad && x <= r.x + r.w + pad && y >= r.y - pad && y <= r.y + r.h + pad;
+        const choosePlotRect = () => {
+          const decent = plotCandidates.filter(isDecentPlotRect);
+          if (!decent.length) return null;
+
+          const xs = [], ys = [];
+          const addBounds = r => {
+            if (!r) return;
+            xs.push(r.x, r.x + r.w);
+            ys.push(r.y, r.y + r.h);
+          };
+          decent.forEach(addBounds);
+          circles.forEach(c => { xs.push(c.cx - c.r, c.cx + c.r); ys.push(c.cy - c.r, c.cy + c.r); });
+          segments.forEach(s => { if (isFinite(s.x) && isFinite(s.y)) { xs.push(s.x); ys.push(s.y); } });
+
+          const contentArea = xs.length
+            ? (Math.max(...xs) - Math.min(...xs)) * (Math.max(...ys) - Math.min(...ys))
+            : 0;
+          const nonPage = decent.filter(r => !contentArea || decent.length === 1 || rectArea(r) < contentArea * 0.92);
+          const pool = nonPage.length ? nonPage : decent;
+          const kindRank = { clip: 3, group: 2, rect: 1 };
+          const stats = pool.map((candidate, idx) => {
+            const seen = new Set();
+            for (const c of circles) {
+              if (containsPoint(candidate, c.cx, c.cy, 2)) seen.add(c.cx.toFixed(1) + ',' + c.cy.toFixed(1));
+            }
+            return { candidate, idx, hits: seen.size, area: rectArea(candidate), rank: kindRank[candidate.kind] || 0 };
+          });
+          const maxHits = Math.max(0, ...stats.map(s => s.hits));
+          const hitFloor = maxHits ? Math.max(1, Math.floor(maxHits * 0.6)) : 0;
+          const eligible = maxHits ? stats.filter(s => s.hits >= hitFloor) : stats;
+
+          eligible.sort((a, b) => {
+            if (maxHits) {
+              const hitSlack = Math.max(1, Math.ceil(maxHits * 0.25));
+              if (Math.abs(b.hits - a.hits) > hitSlack) return b.hits - a.hits;
+            }
+            if (b.area !== a.area) return b.area - a.area;
+            if (b.rank !== a.rank) return b.rank - a.rank;
+            return a.idx - b.idx;
+          });
+
+          const r = eligible[0].candidate;
+          return { x: r.x, y: r.y, w: r.w, h: r.h };
+        };
 
         for (let i = 0; i < ops.length; i++) {
           const o = ops[i]; const a = o.args; const v = j => a[j] && a[j].val;
@@ -1124,16 +1208,26 @@
             case 're': {
               if (!path) beginPath(o.start);
               path.rects++;
-              addPt(v(0), v(1)); addPt(v(0) + v(2), v(1) + v(3));
+              addRectPath(v(0), v(1), v(2), v(3));
               break;
             }
             case 'W': case 'W*': pendingClip = true; break;
             case 'n': case 'f': case 'f*': case 'F': case 'S': case 's': case 'B': case 'B*': case 'b': case 'b*': {
               if (path && path.xs.length) {
-                const x0 = Math.min(...path.xs), x1 = Math.max(...path.xs);
-                const y0 = Math.min(...path.ys), y1 = Math.max(...path.ys);
-                const w = x1 - x0, h = y1 - y0;
-                if (pendingClip && path.rects > 0) { clipRects.push({ x: x0, y: y0, w, h, opIdx: i }); if (w > 2 && h > 2) regions.push({ x: x0, y: y0, w, h, kind: 'clip' }); }
+                const bounds = pathRect();
+                const x0 = bounds.x, y0 = bounds.y, w = bounds.w, h = bounds.h, x1 = x0 + w, y1 = y0 + h;
+                if (path.rects > 0) {
+                  const rects = (path.rectBoxes && path.rectBoxes.length) ? path.rectBoxes : [bounds];
+                  rects.forEach(r => {
+                    noteGroupRect(r);
+                    if (o.op !== 'n') addPlotCandidate(r, 'rect', i);
+                  });
+                  if (pendingClip) {
+                    clipRects.push({ x: x0, y: y0, w, h, opIdx: i });
+                    addPlotCandidate(bounds, 'clip', i);
+                    if (w > 2 && h > 2) regions.push({ x: x0, y: y0, w, h, kind: 'clip' });
+                  }
+                }
                 if (o.op !== 'n' && w > 2 && h > 2) regions.push({ x: x0, y: y0, w, h, kind: 'object' });
                 if (o.op !== 'n' && path.moves === 1 && path.curves >= 3 && path.lines === 0 && w > 2 && h > 2 &&
                   Math.abs(w - h) / Math.max(w, h) < 0.18) {
@@ -1147,11 +1241,11 @@
               path = null; pendingClip = false;
               break;
             }
-            case 'sh': shClipIdx = clipRects.length - 1; break;
-            case 'BDC': case 'BMC': mcStack.push({ minx: Infinity, miny: Infinity, maxx: -Infinity, maxy: -Infinity }); break;
+            case 'BDC': case 'BMC': mcStack.push({ minx: Infinity, miny: Infinity, maxx: -Infinity, maxy: -Infinity, rect: null }); break;
             case 'EMC': {
               const mm = mcStack.pop();
               if (mm && isFinite(mm.minx) && mm.maxx > mm.minx && mm.maxy > mm.miny) regions.push({ x: mm.minx, y: mm.miny, w: mm.maxx - mm.minx, h: mm.maxy - mm.miny, kind: 'group' });
+              if (mm && mm.rect) addPlotCandidate(mm.rect, 'group', i);
               break;
             }
             case 'BT': inText = true; tm = IDENT.slice(); tlm = IDENT.slice(); TL = 0; seg = null; break;
@@ -1181,8 +1275,8 @@
           }
         }
 
-        const plotRect = shClipIdx >= 0 ? clipRects[shClipIdx] : null;
-        return { ops, circles, clipRects, plotRect, segments, regions };
+        const plotRect = choosePlotRect();
+        return { ops, circles, clipRects, plotRect, segments, regions, plotCandidates };
       }
 
       /* ---------------- glyph coverage / encoding for original fonts ---------------- */
@@ -1935,7 +2029,7 @@
         }
 
         const { circles, plotRect, segments } = analyze(content);
-        if (!plotRect) throw new Error('Could not locate the plot area (gradient clip rectangle) in the Illustrator file. Is this the right heat-map file?');
+        if (!plotRect) throw new Error('Could not locate a decently sized plot-area rectangle in the Illustrator file. Is this the right heat-map file?');
         const ov = opts.plotRectOverride;
         const placeRect = (ov && isFinite(ov.x) && isFinite(ov.y) && ov.w > 0 && ov.h > 0)
           ? { x: ov.x, y: ov.y, w: ov.w, h: ov.h }
@@ -3050,7 +3144,7 @@
           content += s2 + '\n';
         }
 
-        const { circles, plotRect, segments, regions } = analyze(content);
+        const { circles, plotRect, segments, regions, plotCandidates } = analyze(content);
         if (!plotRect) throw new Error('Could not locate the plot area in this file.');
 
         const inPlot = (x, y) => x > plotRect.x - 2 && x < plotRect.x + plotRect.w + 2 && y > plotRect.y - 2 && y < plotRect.y + plotRect.h + 2;
@@ -3079,6 +3173,7 @@
           pickRegions.push({ x: rg.x, y: rg.y, w: rg.w, h: rg.h, kind: kind || rg.kind || 'object' });
         };
         pushRegion(plotRect, 'plot');
+        for (const rg of plotCandidates || []) pushRegion(rg, rg.kind);
         for (const rg of regions) pushRegion(rg, rg.kind);
         return {
           bubbleCount: distinct.size,
